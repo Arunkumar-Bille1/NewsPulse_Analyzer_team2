@@ -8,7 +8,8 @@ import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import Profile from './pages/Profile';
 import AdminDashboard from './pages/AdminDashboard';
-
+import ArticleDetails from './pages/ArticleDetails';     // <-- new import for article in details
+import RawAnalysis from "./pages/RawAnalysis";          // <-- new import for user raw article
 
 function App() {
   return (
@@ -23,6 +24,8 @@ function App() {
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/article/:id" element={<ArticleDetails />} />{/* <-- new route */}
+          <Route path="/analyze" element={<RawAnalysis />} />{/* <-- new route */}
         </Routes>
       </div>
     </Router>

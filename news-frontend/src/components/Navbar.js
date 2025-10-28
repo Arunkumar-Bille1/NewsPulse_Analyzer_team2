@@ -18,11 +18,12 @@ function Navbar() {
       </div>
       <div className="flex items-center gap-6 text-base">
         <Link to="/" className="hover:underline">Home</Link>
-        
-        
+
+
+        <Link to="/analyze" className="hover:underline px-4 py-2">Raw Analysis</Link>
         {token ? (
           <>
-            {/* ✅ Show these ONLY when logged in */}
+            {/* Show these ONLY when logged in */}
             <Link to="/profile" className="hover:underline flex items-center gap-1">
               👤 Profile
             </Link>
@@ -30,7 +31,7 @@ function Navbar() {
           </>
         ) : (
           <>
-            {/* ✅ Show these ONLY when NOT logged in */}
+            {/* Show these ONLY when NOT logged in */}
             <Link to="/login" className="hover:underline">Login</Link>
             <Link to="/register" className="hover:underline">Register</Link>
           </>

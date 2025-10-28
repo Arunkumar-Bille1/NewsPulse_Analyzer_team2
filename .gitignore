@@ -1,15 +1,29 @@
-# Ignore Python and DB files
+# Python artifacts
 __pycache__/
 *.pyc
 *.pyo
 *.db
+
+# Virtual environment folders
+venv/
+env/
+
+# Environment/configuration files
 .env
 
-# Ignore Node.js modules and env
+# Node.js/React artifacts
 node_modules/
-.env
 
-# Misc
+# Editor/IDE files
+.vscode/
+.idea/
+
+# OS system files
 .DS_Store
 Thumbs.db
-.vscode/
+
+# Logs and miscellaneous
+*.log
+
+# Other
+*.sqlite3      # If you use SQLite DB files

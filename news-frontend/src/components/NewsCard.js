@@ -1,4 +1,5 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 
 function NewsCard({ article, keywords = [] }) {
   // Simple date formatting
@@ -8,11 +9,11 @@ function NewsCard({ article, keywords = [] }) {
       const date = new Date(dateString);
       const now = new Date();
       const diffHours = Math.floor(Math.abs(now - date) / (1000 * 60 * 60));
-      
+
       if (diffHours < 1) return "Just now";
       if (diffHours < 24) return `${diffHours}h ago`;
       if (diffHours < 48) return "Yesterday";
-      
+
       return date.toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
@@ -37,9 +38,18 @@ function NewsCard({ article, keywords = [] }) {
     }
   };
 
+//------------------view analytic -----------------------------
+  const navigate = useNavigate();
+
+  const handleViewArticle = () => {
+    navigate(`/article/${encodeURIComponent(article.url)}`, { state: { article } });
+  };
+
+//--------------------------------------------------------------
+
   return (
     <div className="group bg-white rounded-lg shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden border border-gray-100 hover:border-indigo-200 hover:-translate-y-1">
-      
+
       {/* Image Section */}
       <div className="relative h-48 overflow-hidden bg-gray-100">
         {article.image ? (
@@ -69,7 +79,7 @@ function NewsCard({ article, keywords = [] }) {
 
       {/* Content Section */}
       <div className="p-5">
-        
+
         {/* Title */}
         <h3 className="font-bold text-lg text-gray-900 mb-3 leading-tight line-clamp-2 hover:text-indigo-700 transition-colors">
           {article.title || "No title available"}
@@ -99,22 +109,30 @@ function NewsCard({ article, keywords = [] }) {
           </div>
         )}
 
-        {/* Bottom Section - Date/Time and Button */}
+
+
+
+        {/* -----------------------------Bottom Section - Date/Time and Buttons ----------------------------*/}
         <div className="flex items-center justify-between">
-          
           {/* Date & Time */}
           <div className="text-xs text-gray-500">
             <div className="font-medium text-gray-700">{formatDate(article.publishedAt)}</div>
             <div>{formatTime(article.publishedAt)}</div>
           </div>
-
-          {/* Attractive Read More Button */}
+          {/* View Article Button */}
+          <button
+            className="ml-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded transition"
+            onClick={handleViewArticle}
+          >
+            View Article
+          </button>
+          {/* "Read More" Button */}
           {article.url && (
             <a
               href={article.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="group/btn inline-flex items-center bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200 hover:scale-105"
+              className="ml-2 group/btn inline-flex items-center bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200 hover:scale-105"
             >
               Read More
               <svg 

@@ -46,7 +46,7 @@ function Login() {
           <p className="text-lg text-purple-100 mb-8 leading-relaxed">
             Access your personalized news dashboard and stay updated with AI-powered global trend analysis.
           </p>
-          
+
           <div className="space-y-6">
             <div className="flex items-start space-x-4">
               <div className="flex-shrink-0">
@@ -60,7 +60,7 @@ function Login() {
                 <p className="text-purple-200 text-sm">Get intelligent insights and trend predictions</p>
               </div>
             </div>
-            
+
             <div className="flex items-start space-x-4">
               <div className="flex-shrink-0">
                 <svg className="w-6 h-6 text-purple-200" fill="currentColor" viewBox="0 0 20 20">
@@ -72,7 +72,7 @@ function Login() {
                 <p className="text-purple-200 text-sm">News curated based on your interests</p>
               </div>
             </div>
-            
+
             <div className="flex items-start space-x-4">
               <div className="flex-shrink-0">
                 <svg className="w-6 h-6 text-purple-200" fill="currentColor" viewBox="0 0 20 20">
@@ -99,8 +99,8 @@ function Login() {
 
           {message && (
             <div className={`text-center text-sm py-3 px-4 rounded-lg border mb-6 ${
-              message.startsWith("SUCCESS") 
-                ? "bg-green-50 text-green-800 border-green-300" 
+              message.startsWith("SUCCESS")
+                ? "bg-green-50 text-green-800 border-green-300"
                 : "bg-red-50 text-red-800 border-red-300"
             }`}>
               {message.replace("SUCCESS: ", "").replace("ERROR: ", "")}

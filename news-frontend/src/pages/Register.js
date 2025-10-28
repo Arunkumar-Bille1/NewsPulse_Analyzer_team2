@@ -79,7 +79,7 @@ function Register() {
         {/* Subtle decorative circles */}
         <div className="absolute top-20 right-20 w-64 h-64 bg-white opacity-5 rounded-full blur-3xl"></div>
         <div className="absolute bottom-20 left-20 w-48 h-48 bg-white opacity-5 rounded-full blur-3xl"></div>
-        
+
         <div className="relative z-10 max-w-md mx-auto">
           <h1 className="text-4xl font-bold text-white mb-4 leading-tight">
             Join TrendVista Today
@@ -87,7 +87,7 @@ function Register() {
           <p className="text-lg text-indigo-100 mb-10 leading-relaxed">
             Create your account and unlock personalized news intelligence powered by advanced AI technology.
           </p>
-          
+
           <div className="space-y-4">
             <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-xl p-5 border border-white border-opacity-20 hover:bg-opacity-15 transition-all">
               <div className="flex items-start space-x-4">
@@ -104,7 +104,7 @@ function Register() {
                 </div>
               </div>
             </div>
-            
+
             <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-xl p-5 border border-white border-opacity-20 hover:bg-opacity-15 transition-all">
               <div className="flex items-start space-x-4">
                 <div className="flex-shrink-0 mt-1">
@@ -121,7 +121,7 @@ function Register() {
                 </div>
               </div>
             </div>
-            
+
             <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-xl p-5 border border-white border-opacity-20 hover:bg-opacity-15 transition-all">
               <div className="flex items-start space-x-4">
                 <div className="flex-shrink-0 mt-1">
@@ -151,8 +151,8 @@ function Register() {
 
           {message && (
             <div className={`text-center text-sm py-3 px-4 rounded-lg border mb-5 ${
-              message.startsWith("SUCCESS") 
-                ? "bg-green-50 text-green-800 border-green-300" 
+              message.startsWith("SUCCESS")
+                ? "bg-green-50 text-green-800 border-green-300"
                 : "bg-red-50 text-red-800 border-red-300"
             }`}>
               {message.replace("SUCCESS: ", "").replace("ERROR: ", "")}
@@ -276,7 +276,7 @@ function Register() {
               />
             </div>
 
-            <button 
+            <button
               type="submit"
               className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg py-3 text-sm font-bold hover:from-indigo-700 hover:to-purple-700 transition-all transform hover:scale-[1.02] disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none shadow-lg mt-2"
               disabled={loading}

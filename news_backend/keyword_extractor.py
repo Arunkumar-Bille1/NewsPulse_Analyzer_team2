@@ -5,7 +5,7 @@ from news_backend.models import NewsBase
 
 kw_model = KeyBERT()
 
-def extract_keywords_for_articles(db: Session, top_n=5):
+def extract_keywords_for_articles(db: Session, top_n: int = 5):
     """
     Extract keywords for each news article and attach them.
     """
