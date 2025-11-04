@@ -1,112 +1,204 @@
+# =========================================================
+# TrendPulse AI Backend - main.py
+# =========================================================
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Request, Query
+
+#from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from news_backend.trend_detector import detect_trends_from_db
 from sqlalchemy.orm import Session
+from datetime import datetime, timedelta
 from authlib.integrations.starlette_client import OAuth
 from jose import JWTError, jwt
-from datetime import datetime, timedelta
-from dotenv import load_dotenv
+from passlib.context import CryptContext
 from typing import List
-import os
 from pydantic import BaseModel
-import pandas as pd
-
-from news_backend.keyword_extractor import kw_model
-
-from news_backend import auth, schemas, models
-from news_backend.database import Base, engine, get_db
-from news_backend.auth import SECRET_KEY, ALGORITHM
-from news_backend.models import NewsBase
-from news_backend.news_fetcher import get_combined_news, save_news_to_db
-from news_backend.text_preprocessor import preprocess_query
-from news_backend.keyword_extractor import extract_keywords_for_articles
-from news_backend.trend_detector import detect_trends_from_db
-from news_backend.email_utils import send_reset_email
-from news_backend.topic_modeler import train_topic_model, get_topic_info
-from news_backend.trend_detector import get_topic_time_series
-from news_backend.database import SessionLocal
-
-
-
-# Added For sentiment analysis
+from dotenv import load_dotenv
 from transformers import pipeline
+import os
+from news_backend import auth
+from news_backend.text_preprocessor import preprocess_query
 
-# Set up Hugging Face sentiment pipeline (loaded once)
-sentiment_analyzer = pipeline(
-    task="sentiment-analysis",
-    model="distilbert-base-uncased-finetuned-sst-2-english"
+# =========================================================
+# Import Local Project Modules
+# =========================================================
+from news_backend.database import Base, engine, get_db
+from news_backend import models, schemas
+from news_backend.auth import router as auth_router
+from news_backend.news_routes import router as news_routes_router
+from news_backend.detect_trends import router as detect_trends_router
+from news_backend.topic_routes import router as topic_routes_router
+from news_backend.topic_modeler import train_topic_model, get_topic_info
+from news_backend.news_fetcher import get_combined_news
+from news_backend.news_fetcher import save_news_to_db
+#from news_backend.detect_trends import detect_trends_from_db
+#from news_backend.detect_trends import router as detect_trends_router
+from news_backend.news_routes import router as news_router
+from news_backend.topic_routes import router as topic_router
+from news_backend.detect_trends import router as detect_trends_router
+
+# =========================================================
+# FASTAPI INITIALIZATION
+# =========================================================
+app = FastAPI(title="NewsPulse Analyzer")
+
+# =========================================================
+# ENABLE CORS
+# =========================================================
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Your frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
-# Initialize NER pipeline using state-of-the-art model
+# Include routers
+app.include_router(news_router)
+app.include_router(topic_router)
+app.include_router(detect_trends_router)  # ✅ correctly included
+
+# =========================================================
+# ENVIRONMENT & DATABASE SETUP
+# =========================================================
+load_dotenv()
+Base.metadata.create_all(bind=engine)
+
+# =========================================================
+# SECURITY CONFIGURATION
+# =========================================================
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+
+# =========================================================
+# OAUTH SETUP (Google)
+# =========================================================
+oauth = OAuth()
+oauth.register(
+    name="google",
+    client_id=os.getenv("GOOGLE_CLIENT_ID"),
+    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={"scope": "openid email profile"},
+)
+
+# =========================================================
+# LOAD NLP MODELS (Startup Once)
+# =========================================================
+sentiment_analyzer = pipeline(
+    "sentiment-analysis",
+    model="distilbert-base-uncased-finetuned-sst-2-english"
+)
+
 ner_pipeline = pipeline(
     "ner",
     model="dslim/bert-base-NER",
     aggregation_strategy="simple"
 )
 
+# =========================================================
+# REGISTER ROUTERS
+# =========================================================
+app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
+app.include_router(news_routes_router, prefix="/news", tags=["News"])
+app.include_router(detect_trends_router, prefix="/trends", tags=["Trends"])
+app.include_router(topic_routes_router, prefix="/topics", tags=["Topics"])
 
-app = FastAPI()
-
-
-articles_store = []
-
-
-
-load_dotenv()
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
-
-Base.metadata.create_all(bind=engine)
-
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-oauth = OAuth()
-oauth.register(
-    name='google',
-    client_id=os.getenv("GOOGLE_CLIENT_ID"),
-    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
-    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
-    client_kwargs={'scope': 'openid email profile'}
-)
-
-def require_admin(current_user: models.User = Depends(auth.get_current_user)):
+# =========================================================
+# ADMIN VALIDATION FUNCTION
+# =========================================================
+def require_admin(current_user: models.User = Depends()):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
 
-@app.post("/register", response_model=schemas.UserOut)
-def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    db_user = db.query(models.User).filter(models.User.email == user.email).first()
-    if db_user:
+# =========================================================
+# USER REGISTRATION ENDPOINT
+# =========================================================
+class RegisterRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+
+
+@app.post("/auth/register")
+def register_user(request: RegisterRequest, db: Session = Depends(get_db)):
+    from news_backend.models import User
+
+    existing_user = db.query(User).filter(User.email == request.email).first()
+    if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    hashed_pw = auth.hash_password(user.password)
-    new_user = models.User(
-        email=user.email,
-        hashed_password=hashed_pw,
-        name=user.name,
-        country=user.country,
-        language=user.language,
-        interests=user.interests,
-        role=user.role or "user",
-        phone_number=user.phone_number,
-        profile_photo=user.profile_photo
+    hashed_password = pwd_context.hash(request.password)
+    new_user = User(
+        username=request.username,
+        email=request.email,
+        hashed_password=hashed_password,
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    return new_user
+    return {"message": "User registered successfully", "user_id": new_user.id}
+
+# =========================================================
+# LOGIN ENDPOINT
+# =========================================================
+@app.post("/auth/login")
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.email == form_data.username).first()
+    if not user or not pwd_context.verify(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    return {"message": "Login successful", "user_id": user.id}
+
+# =========================================================
+# FORGOT PASSWORD ENDPOINT
+# =========================================================
+@app.post("/auth/forgot-password")
+def forgot_password(request: schemas.PasswordResetRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.email == request.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    background_tasks.add_task(send_reset_email, user.email)
+    return {"message": "Password reset email sent successfully"}
+
+def send_reset_email(email: str):
+    print(f"📧 Sending password reset email to {email}")
+
+# =========================================================
+# TREND DEMO ENDPOINT
+# =========================================================
+@app.get("/detect-trends")
+def detect_trends(range: str = "7d"):
+    topics = [
+        {"name": "AI", "score": 0.89},
+        {"name": "Elections", "score": 0.73},
+    ]
+    result = {"topics": topics}
+    print("🔍 Sending response to frontend:", result)
+    return result
+
+# =========================================================
+# ROOT ENDPOINT
+# =========================================================
+@app.get("/")
+def root():
+    return {"message": "🚀 TrendPulse AI Backend Running Successfully!"}
+
+# =========================================================
+# STARTUP LOG (Show All Routes)
+# =========================================================
+@app.on_event("startup")
+async def show_routes():
+    print("\n✅ Registered routes:")
+    for r in app.routes:
+        print(f" → {r.path}")
+    print("✅ Server Ready!\n")
+
 
 @app.post("/login")
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)): # type: ignore
     user = db.query(models.User).filter(models.User.email == form_data.username).first()
     if not user or not auth.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
@@ -158,7 +250,7 @@ def read_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 @app.post("/forgot-password")
-def forgot_password(request: schemas.PasswordResetRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+def forgot_password(request: schemas.PasswordResetRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)): # type: ignore
     token = auth.create_password_reset_token(request.email, db)
     if token:
         reset_link = f"http://localhost:3000/reset-password?token={token}"
@@ -256,105 +348,213 @@ def save_article(db: Session, article):
 
 
 
+# ===========================================================
+# Initialize FastAPI
+# ===========================================================
+app = FastAPI(
+    title="📰 NewsPulse Analyzer API",
+    description="Backend for automated news trend detection and sentiment analysis.",
+    version="1.0.0"
+)
+
+# ===========================================================
+# CORS Configuration
+# ===========================================================
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Replace * with specific frontend URL in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ===========================================================
+# Root Endpoint
+# ===========================================================
+@app.get("/")
+def root():
+    return {"message": "🚀 NewsPulse Analyzer Backend Running Successfully!"}
+
+
+# ===========================================================
+# 1️⃣ Text Preprocessing
+# ===========================================================
+@app.post("/process_text")
+def process_text(input_text: str):
+    """
+    Cleans, corrects, and lemmatizes input text.
+    """
+    if not input_text:
+        raise HTTPException(status_code=400, detail="No text provided.")
+    processed = preprocess_query(input_text)
+    return {"original": input_text, "processed": processed}
+
+
+# ===========================================================
+# 2️⃣ Detect Trending Topics from DB
+# ===========================================================
+@app.get("/detect-trends")
+def detect_trends():
+    """
+    Detect trending topics and keywords from the database.
+    """
+    return detect_trends_from_db()
+
+
+# ===========================================================
+# 3️⃣ Topic Modeling (Train and Retrieve Topics)
+# ===========================================================
+@app.post("/train_topics")
+def train_topics(db: Session = Depends(get_db)):
+    """
+    Train BERTopic on all news articles stored in DB.
+    """
+    articles = db.query(models.NewsBase).all()
+    if not articles:
+        raise HTTPException(status_code=404, detail="No news data found in database.")
+
+    docs = [a.title or "" for a in articles]
+    topics, probs = train_topic_model(docs)
+    topic_info = get_topic_info()
+
+    return {"topics": topics, "probabilities": probs, "topic_info": topic_info}
+
+
+# ===========================================================
+# 4️⃣ Health Check
+# ===========================================================
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+
+# ===========================================================
+# Helper: Clean Keywords
+# ===========================================================
 def clean_keywords(name_field):
     """
-    Cleans topic keywords from BERTopic's Name field.
-    Handles both comma- and underscore-separated cases, removes prefix/topic ID.
+    Cleans topic keywords from BERTopic's name field.
+    Handles both comma- and underscore-separated cases.
     """
     import re
     name_field = re.sub(r'^\d+_', '', name_field)
     tokens = [t.strip() for t in name_field.split(',')]
-    # Fallback in case BERTopic returns a single underscore-joined string
     if len(tokens) == 1 and '_' in tokens[0]:
         tokens = [t.strip() for t in tokens[0].split('_')]
-    tokens = [t for t in tokens if t]
-    return tokens
+    return [t for t in tokens if t]
 
+
+# ===========================================================
+# 5️⃣ Fetch and Analyze News (Live + Topic Modeling)
+# ===========================================================
 @app.get("/news")
 def get_news(query: str = "technology", db: Session = Depends(get_db)):
+    # Step 1: Clean and preprocess user query
     processed_query = preprocess_query(query)
+
+    # Step 2: Fetch news articles
     articles = get_combined_news(processed_query)
+
+    # Step 3: Save to database
     save_news_to_db(db, articles)
 
-    docs = [article["title"] for article in articles]
-    # Run topic modeling
+    # Step 4: Prepare valid documents (titles or content only)
+    docs = [
+        str(a.get("content") or a.get("description") or a.get("title", ""))
+        for a in articles
+        if isinstance(a, dict) and (a.get("title") or a.get("content"))
+    ]
+
+    if not docs:
+        raise HTTPException(status_code=400, detail="No valid text found for topic modeling.")
+
+    # Step 5: Train BERTopic model
     topics, probs = train_topic_model(docs)
+
+    # Step 6: Get topic details
     topic_info_df = get_topic_info()
-    # Map topic id to clean keyword list
-    topic_id_to_keywords = {
+
+    # Step 7: Map topics to readable keyword labels
+    topic_map = {
         str(row["Topic"]): clean_keywords(row["Name"])
         for _, row in topic_info_df.iterrows()
     }
 
-    # Annotate each article with topic and keywords
+    # Step 8: Attach topic info to each article
     for idx, article in enumerate(articles):
         topic_id = str(topics[idx])
-        article["topic_id"] = topic_id
-        # Add topic_label
-        # Use the first keyword, or a more descriptive label if available
-        article["topic_label"] = topic_id_to_keywords.get(topic_id, [""])[0] if topic_id != "-1" else ""
-        if topic_id == "-1":
-            article["keywords"] = []
-        else:
-            article["keywords"] = topic_id_to_keywords.get(topic_id, [])
-        article["topic_confidence"] = float(probs[idx]) if probs is not None else None
+        keywords = topic_map.get(topic_id, [])
+        article["topic_id"] = int(topic_id) if topic_id != "-1" else None
+        article["topic_label"] = keywords[0] if keywords else ""
+        article["keywords"] = keywords
+        article["topic_confidence"] = (
+            float(probs[idx]) if probs is not None and len(probs) > idx else None
+        )
 
+    # Step 9: Return response
     return {
         "original_query": query,
         "processed_query": processed_query,
         "articles": articles
     }
 
-
-
-
+# ===========================================================
+# 6️⃣ Fetch Stored News
+# ===========================================================
 @app.get("/news_stored")
 def get_stored_news(db: Session = Depends(get_db)):
     return db.query(NewsBase).all()
 
 
-
-
-# ----------------------------------------------------------------
-# @app.get("/extract-keywords")
-# def extract_keywords():
-#     return extract_keywords_for_articles(top_n=5)
-# -----------------------------------------------------------------
-
-
+# ===========================================================
+# 7️⃣ Keyword Extraction
+# ===========================================================
 @app.get("/extract-keywords")
 def extract_keywords(text: str = Query(...), top_n: int = 5):
+    """
+    Extract top keywords from input text using KeyBERT.
+    """
     keywords = kw_model.extract_keywords(
         text,
         keyphrase_ngram_range=(1, 2),
         stop_words='english',
         top_n=top_n
     )
-    # Return both keyword and its score
-    return {
-        "keywords": [
-            {"word": kw[0], "score": float(kw[1])}
-            for kw in keywords
-        ]
-    }
+    return {"keywords": [{"word": kw[0], "score": float(kw[1])} for kw in keywords]}
 
 
+# ===========================================================
+# 8️⃣ Trending Topics (Latest)
+# ===========================================================
+@app.get("/trending")
+def fetch_trending_data(db: Session = Depends(get_db)):
+    """
+    Fetch latest trending topics and keywords from the database.
+    """
+    return get_latest_trends(db)
 
 
-@app.get("/detect-trends")
-def detect_trends():
-    return detect_trends_from_db()
-
+# ===========================================================
+# 9️⃣ User Profile Management
+# ===========================================================
 @app.post("/profile", response_model=schemas.UserProfileResponse)
-def create_profile(data: schemas.UserProfileCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def create_profile(
+    data: schemas.UserProfileCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    """
+    Create a user profile if not already existing.
+    """
     existing = db.query(models.UserProfile).filter(models.UserProfile.user_id == current_user.id).first()
     if existing:
         raise HTTPException(status_code=400, detail="Profile already exists. Use PUT to update.")
-    new_profile = models.UserProfile(user_id=current_user.id, **data.dict())
-    db.add(new_profile)
+    profile = models.UserProfile(user_id=current_user.id, **data.dict())
+    db.add(profile)
     db.commit()
-    db.refresh(new_profile)
-    return new_profile
+    db.refresh(profile)
+    return profile
+
 
 @app.get("/profile", response_model=schemas.UserProfileResponse)
 def get_profile(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
@@ -363,8 +563,13 @@ def get_profile(db: Session = Depends(get_db), current_user: models.User = Depen
         raise HTTPException(status_code=404, detail="Profile not found")
     return profile
 
+
 @app.put("/profile", response_model=schemas.UserProfileResponse)
-def update_profile(data: schemas.UserProfileUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def update_profile(
+    data: schemas.UserProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
     profile = db.query(models.UserProfile).filter(models.UserProfile.user_id == current_user.id).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
@@ -374,6 +579,7 @@ def update_profile(data: schemas.UserProfileUpdate, db: Session = Depends(get_db
     db.commit()
     db.refresh(profile)
     return profile
+
 
 @app.delete("/profile")
 def delete_profile(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
@@ -385,31 +591,27 @@ def delete_profile(db: Session = Depends(get_db), current_user: models.User = De
     return {"message": "Profile deleted successfully"}
 
 
-
-
-
-# added by me AK for testing
-@app.get("/")
-def read_root():
-    return {"message": "Welcome to NewsPulse Analyzer API"}
-
-# Text Preprocessing and Sentiment Analysis Endpoints
+# ===========================================================
+# 🔟 NLP Endpoints: Preprocess, Sentiment, and NER
+# ===========================================================
 @app.get("/preprocess")
-def preprocess_text_endpoint(query: str = Query(..., description="Input text to preprocess")):
-    processed_text = preprocess_query(query)
-    return {"original": query, "processed": processed_text}
+def preprocess_text_endpoint(query: str = Query(..., description="Text to preprocess")):
+    processed = preprocess_query(query)
+    return {"original": query, "processed": processed}
 
 
 @app.get("/sentiment")
-def sentiment_endpoint(text: str = Query(..., description="Enter text to analyze sentiment")):
+def sentiment_endpoint(text: str = Query(..., description="Text for sentiment analysis")):
     cleaned_text = preprocess_query(text)
     result = sentiment_analyzer(cleaned_text)
+
     if not result:
         return {"sentiment": {"label": "UNKNOWN", "confidence": 0.0}}
 
+    all_scores = {}
     result_scores = sentiment_analyzer(cleaned_text, return_all_scores=True)
+
     if isinstance(result_scores, list) and len(result_scores) > 0:
-        # Example: [{'label': 'NEGATIVE', 'score': 0.95}, {'label': 'POSITIVE', 'score': 0.05}]
         all_scores = {x['label']: float(x['score']) for x in result_scores[0]}
     else:
         all_scores = {result[0]['label']: float(result[0]['score'])}
@@ -424,14 +626,9 @@ def sentiment_endpoint(text: str = Query(..., description="Enter text to analyze
     }
 
 
-
 @app.get("/ner")
-def named_entity_recognition(text: str):
-    """
-    Extract named entities (persons, orgs, locations, etc) from text.
-    """
+def named_entity_recognition(text: str = Query(..., description="Text for entity extraction")):
     entities = ner_pipeline(text)
-    # You can simplify or process entities if desired
     ner_results = [
         {
             "word": ent["word"],
@@ -445,54 +642,60 @@ def named_entity_recognition(text: str):
     return {"entities": ner_results}
 
 
-
-
-
-@app.get("/detect-trends")
-def detect_trends():
-    return detect_trends_from_db()
-
-
-
-
+# ===========================================================
+# 11️⃣ Custom Article Model & News Storage
+# ===========================================================
 class Article(BaseModel):
-    # Include only fields you care about for trends, NER, sentiment, etc.
     publishedAt: str
     topic_id: str
     title: str = ""
     description: str = ""
 
 
+articles_store = []  # Temporary in-memory storage
 
 
-@app.post("/news")
+@app.post("/news/save")
 def save_articles(new_articles: List[Article]):
+    """
+    Save articles and apply topic modeling before storing.
+    """
     articles = [a.dict() for a in new_articles]
-
-    docs = [article["title"] for article in articles]
+    docs = [a["title"] for a in articles]
     topics, probs = train_topic_model(docs)
     topic_info_df = get_topic_info()
-    topic_id_to_keywords = {
+
+    topic_map = {
         str(row["Topic"]): clean_keywords(row["Name"])
         for _, row in topic_info_df.iterrows()
     }
 
     for idx, article in enumerate(articles):
         topic_id = str(topics[idx])
-        keywords_list = topic_id_to_keywords.get(topic_id, [])
-
+        keywords = topic_map.get(topic_id, [])
         article["topic_id"] = topic_id
-        # Use first N keywords for topic_label, or a placeholder
-        if keywords_list:
-            article["topic_label"] = ", ".join(keywords_list[:2])  # Show up to 2
-        else:
-            article["topic_label"] = ""  # Or use "(No keywords)" if you prefer
-        article["keywords"] = keywords_list
+        article["topic_label"] = ", ".join(keywords[:2]) if keywords else ""
+        article["keywords"] = keywords
         article["topic_confidence"] = float(probs[idx]) if probs is not None else None
         articles_store.append(article)
 
-    print("Sample article:", articles_store[0])  # Debug: See output structure
     return {"status": "articles saved", "count": len(articles_store)}
 
 
+# ===========================================================
+# 12️⃣ Include Routers from Other Modules
+# ===========================================================
+#from news_backend import topic_routes, news_routes, trend_routes
+
+@app.on_event("startup")
+async def show_routes():
+    print("\n✅ Registered routes:")
+    for route in app.routes:
+        print(" →", route.path)
+
+#from news_backend.admin import router as admin_router
+#app.include_router(admin_router)
+from fastapi import FastAPI
+
+#app.include_router(admin_router, prefix="/admin", tags=["Admin"])
 

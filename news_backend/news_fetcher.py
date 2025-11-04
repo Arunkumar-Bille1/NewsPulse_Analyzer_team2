@@ -14,12 +14,15 @@ env_path = Path(__file__).resolve().parent / ".env"
 print(f"Looking for .env at: {env_path}")
 load_dotenv(env_path)
 
-
+#NEWS_API_KEY = fd6b4247f1054b2e8b2f3c1eed92ee45
+#GNEWS_KEY =f74752ad4603941d97396533741a563d
+#REDDIT_CLIENT_ID ="up9mA01v608o84gLtvMhYA" 
+#REDDIT_CLIENT_SECRET = "0z_wuVPMlo3o5_Si7IoxmRWOhF7iaA" # pyright: ignore[reportUndefinedVariable]
 # Get API keys
-NEWS_API_KEY = os.getenv("NEWS_API_KEY")
-GNEWS_KEY = os.getenv("GNEWS_KEY")
-REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID")
-REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET")
+NEWS_API_KEY = os.getenv("NEWS_API_KEY","fd6b4247f1054b2e8b2f3c1eed92ee45")
+GNEWS_KEY = os.getenv("GNEWS_KEY","2c36917d2300c1c6914eafe469e128e1")
+REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID","up9mA01v608o84gLtvMhYA")
+REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET","0z_wuVPMlo3o5_Si7IoxmRWOhF7iaA")
 
 
 print(f"Loaded NEWS_API_KEY: {NEWS_API_KEY[:6] + '...' if NEWS_API_KEY else 'None'}")

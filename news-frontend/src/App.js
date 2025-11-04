@@ -10,6 +10,8 @@ import Profile from './pages/Profile';
 import AdminDashboard from './pages/AdminDashboard';
 import ArticleDetails from './pages/ArticleDetails';     // <-- new import for article in details
 import RawAnalysis from "./pages/RawAnalysis";          // <-- new import for user raw article
+import Trending from "./pages/Trending";
+import TopicTrends from "./pages/TopicTrends";
 
 function App() {
   return (
@@ -26,6 +28,8 @@ function App() {
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/article/:id" element={<ArticleDetails />} />{/* <-- new route */}
           <Route path="/analyze" element={<RawAnalysis />} />{/* <-- new route */}
+          <Route path="/trending" element={<Trending />} />
+          <Route path="/topic-trends" element={<TopicTrends />} />
         </Routes>
       </div>
     </Router>

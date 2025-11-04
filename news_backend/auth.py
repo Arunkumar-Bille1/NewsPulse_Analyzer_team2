@@ -1,14 +1,14 @@
 from datetime import datetime, timedelta
+import secrets
 from jose import jwt, JWTError
 from passlib.context import CryptContext
-from fastapi import HTTPException, Depends
+from fastapi import HTTPException, Depends, APIRouter
 from fastapi.security import OAuth2PasswordBearer
-import secrets
 from sqlalchemy.orm import Session
 
-from news_backend.models import PasswordResetToken, User
+# ✅ Import database and models at the top
 from news_backend.database import get_db
-
+from news_backend.models import PasswordResetToken, User
 
 SECRET_KEY = "mysupersecretkey12345"
 ALGORITHM = "HS256"
@@ -18,20 +18,20 @@ RESET_TOKEN_EXPIRE_MINUTES = 15
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
+# ==========================================================
+# 🔐 Authentication Utility Functions
+# ==========================================================
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
-
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
-
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta if expires_delta else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     try:
@@ -46,7 +46,9 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     except JWTError:
         raise HTTPException(status_code=401, detail="Token expired or invalid")
 
-
+# ==========================================================
+# 🔁 Password Reset
+# ==========================================================
 def create_password_reset_token(email: str, db: Session):
     user = db.query(User).filter(User.email == email).first()
     if not user:
@@ -65,7 +67,6 @@ def verify_password_reset_token(token: str, db: Session):
         return None
     return record.user_id
 
-
 def reset_user_password(user_id: int, new_password: str, db: Session):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -75,3 +76,35 @@ def reset_user_password(user_id: int, new_password: str, db: Session):
     db.commit()
     return True
 
+# ==========================================================
+# 🚀 FastAPI Router
+# ==========================================================
+router = APIRouter(prefix="/auth", tags=["Auth"])
+
+@router.post("/register")
+def register_user(request: dict, db: Session = Depends(get_db)):
+    # ✅ Now get_db is properly recognized
+    email = request.get("email")
+    password = request.get("password")
+
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    hashed_pw = hash_password(password)
+    new_user = User(email=email, hashed_password=hashed_pw)
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return {"message": "User registered successfully", "user_id": new_user.id}
+
+@router.post("/login")
+def login_user(request: dict, db: Session = Depends(get_db)):
+    email = request.get("email")
+    password = request.get("password")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user or not verify_password(password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    access_token = create_access_token({"sub": user.email})
+    return {"access_token": access_token, "token_type": "bearer"}
