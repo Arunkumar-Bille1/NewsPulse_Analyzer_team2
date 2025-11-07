@@ -517,7 +517,9 @@ class ProfileUpdate(BaseModel):
     email_notifications: Optional[bool] = None
     country: Optional[str] = None
     location: Optional[str] = None
-    bio: Optional[str] = None  # NEW
+    bio: Optional[str] = None
+    website: Optional[str] = None      # NEW
+    phone: Optional[str] = None        # NEW
 
 DEFAULT_PROFILE = {
     "preferred_language": "en",
@@ -527,7 +529,9 @@ DEFAULT_PROFILE = {
     "email_notifications": False,
     "country": "",
     "location": "",
-    "bio": "",  # NEW
+    "bio": "",
+    "website": "",                      # NEW
+    "phone": "",                        # NEW
 }
 
 
