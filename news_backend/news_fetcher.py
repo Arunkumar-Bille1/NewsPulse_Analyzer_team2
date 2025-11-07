@@ -19,10 +19,10 @@ load_dotenv(env_path)
 #REDDIT_CLIENT_ID ="up9mA01v608o84gLtvMhYA" 
 #REDDIT_CLIENT_SECRET = "0z_wuVPMlo3o5_Si7IoxmRWOhF7iaA" # pyright: ignore[reportUndefinedVariable]
 # Get API keys
-NEWS_API_KEY = os.getenv("NEWS_API_KEY","226b77d5fd21404cae598ac715d6bfdc")
-GNEWS_KEY = os.getenv("GNEWS_KEY","50c4a52b74aeaad394ae720ab5918d3c")
-REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID","jqealzFkGH0NioxSHSA0rg")
-REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET","ulPlCNFW8i0ah8HF-CB_1j5-v3iwmw")
+NEWS_API_KEY = os.getenv("NEWS_API_KEY","226b77d5fd..........your api key.........6bfdc")
+GNEWS_KEY = os.getenv("GNEWS_KEY","50c4a52........your api keyu.......5918d3c")
+REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID","jqealzF.....your key...SA0rg")
+REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET","ulPlCNFW.....your api key........iwmw")
 
 
 print(f"Loaded NEWS_API_KEY: {NEWS_API_KEY[:6] + '...' if NEWS_API_KEY else 'None'}")

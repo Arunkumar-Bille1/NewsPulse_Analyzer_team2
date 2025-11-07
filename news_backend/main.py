@@ -445,34 +445,6 @@ def reset_password(request: PasswordResetConfirm):
 
 
 
-#
-# from fastapi import Depends, status
-# from fastapi.security import OAuth2PasswordBearer
-# from pydantic import BaseModel
-# import jwt  # pyjwt
-#
-# oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")  # match your route[web:387][web:393]
-#
-# class CurrentUser(BaseModel):
-#     id: int
-#     email: str
-#
-# JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret")
-# JWT_ALG = "HS256"
-#
-# def get_current_user(token: str = Depends(oauth2_scheme)) -> CurrentUser:
-#     try:
-#         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
-#         uid = payload.get("sub")
-#         mail = payload.get("email")
-#         if not uid or not mail:
-#             raise ValueError("missing sub/email in token")
-#         return CurrentUser(id=int(uid), email=mail)
-#     except jwt.ExpiredSignatureError:
-#         raise HTTPException(401, detail="Token expired")
-#     except Exception as e:
-#         print("JWT decode error:", e)  # log for debugging
-#         raise HTTPException(401, detail="Invalid token")
 
 
 
@@ -983,6 +955,3 @@ def detect_trends_topics(range: str = Query("7d")):
 
 
 
-#=================================================================
-# At this point redirect to login essue is solved
-#=================================================================
