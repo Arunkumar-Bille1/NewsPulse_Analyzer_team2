@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import axios from "axios";
+import api from "../api";
 
 const interestOptions = [
-  'Technology', 'Business', 'Politics', 'Sports',
-  'Health', 'Science', 'Entertainment', 'Environment', 'Economy', 'Education'
+  "Technology","Business","Politics","Sports",
+  "Health","Science","Entertainment","Environment","Economy","Education"
 ];
 
 function Profile() {
@@ -20,6 +20,7 @@ function Profile() {
   const [bio, setBio] = useState("");
   const [website, setWebsite] = useState("");
   const [location, setLocation] = useState("");
+  const [country, setCountry] = useState("");   // NEW
   const [phone, setPhone] = useState("");
   const [preferredLanguage, setPreferredLanguage] = useState("en");
   const [interests, setInterests] = useState([]);
@@ -29,38 +30,27 @@ function Profile() {
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
 
-  useEffect(() => {
-    if (!token) {
-      navigate("/login");
-      return;
-    }
-    fetchAllData();
-  }, []);
-
-  const fetchAllData = async () => {
+  // 1) Define fetchAllData first, fully closed, and with deps
+  const fetchAllData = useCallback(async () => {
     try {
-      const userResponse = await axios.get("http://127.0.0.1:8000/users/me", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const userResponse = await api.get("/users/me");
       setUser(userResponse.data);
+
       try {
-        const profileResponse = await axios.get("http://127.0.0.1:8000/profile", {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const profileResponse = await api.get("/profile");
         const profileData = profileResponse.data;
         setProfile(profileData);
         setBio(profileData.bio || "");
         setWebsite(profileData.website || "");
         setLocation(profileData.location || "");
+        setCountry(profileData.country || ""); // NEW
         setPhone(profileData.phone || "");
         setPreferredLanguage(profileData.preferred_language || "en");
         setInterests(Array.isArray(profileData.interests) ? profileData.interests : []);
         setEmailNotifications(profileData.email_notifications || false);
         setTrendingAlerts(profileData.trending_alerts || false);
       } catch (error) {
-        if (error.response?.status !== 404) {
-          console.error("Error fetching profile:", error);
-        }
+        if (error.response?.status !== 404) console.error("Error fetching profile:", error);
       }
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -71,47 +61,45 @@ function Profile() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [navigate]);
 
+  // 2) Then use it in useEffect with proper deps
+  useEffect(() => {
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+    fetchAllData();
+  }, [token, navigate, fetchAllData]);
+
+  // 3) Save handler (unchanged except for debug log)
   const handleSaveProfile = async (e) => {
   e.preventDefault();
   setSaving(true);
   setMessage("");
 
-  const token = localStorage.getItem("token");
-  if (!token) {
-    setMessage("ERROR: Not authenticated. Please log in.");
-    setSaving(false);
-    return;
-  }
-
   try {
     const profileData = {
-      bio,
-      website,
-      location,
-      phone,
+      bio, website, location, country, phone,
       preferred_language: preferredLanguage,
-      interests: Array.isArray(interests) ? interests : [], // always array
+      interests: Array.isArray(interests) ? interests : [],
       email_notifications: emailNotifications,
       trending_alerts: trendingAlerts
     };
 
     if (profile) {
-      await axios.put("http://127.0.0.1:8000/profile", profileData, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      console.log("sending PUT /profile", profileData); // add this
+      await api.put("/profile", profileData);
       setMessage("SUCCESS: Profile updated successfully!");
     } else {
-      await axios.post("http://127.0.0.1:8000/profile", profileData, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      console.log("sending POST /profile", profileData); // add this
+      await api.post("/profile", profileData);
       setMessage("SUCCESS: Profile created successfully!");
     }
 
     setEditing(false);
     setTimeout(() => setMessage(""), 3000);
-    fetchAllData();  // Refresh profile details after save
+    fetchAllData();
   } catch (error) {
     console.error("Error saving profile:", error);
     setMessage("ERROR: Failed to save profile. Please try again.");
@@ -119,6 +107,7 @@ function Profile() {
     setSaving(false);
   }
 };
+
 
 
   const toggleInterest = (topic) => {
@@ -288,28 +277,39 @@ function Profile() {
                           className="w-full border-2 border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                         />
                       </div>
-
                       <div>
                         <label className="block text-sm font-semibold text-gray-700 mb-1">Location</label>
                         <input
                           type="text"
                           value={location}
                           onChange={(e) => setLocation(e.target.value)}
-                          placeholder="City, Country"
+                          placeholder="City"
                           className="w-full border-2 border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                         />
                       </div>
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-1">Phone</label>
-                      <input
-                        type="tel"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        placeholder="+1 234 567 8900"
-                        className="w-full border-2 border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Country</label>
+                        <input
+                          type="text"
+                          value={country}
+                          onChange={(e) => setCountry(e.target.value)}
+                          placeholder="Country"
+                          className="w-full border-2 border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Phone</label>
+                        <input
+                          type="tel"
+                          value={phone}
+                          onChange={(e) => setPhone(e.target.value)}
+                          placeholder="+1 234 567 8900"
+                          className="w-full border-2 border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        />
+                      </div>
                     </div>
 
                     <div className="flex space-x-3">
@@ -335,6 +335,7 @@ function Profile() {
                       <label className="text-sm font-semibold text-gray-700">Bio</label>
                       <p className="text-gray-900 mt-1">{bio || "No bio added yet"}</p>
                     </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-semibold text-gray-700">Website</label>
@@ -351,20 +352,18 @@ function Profile() {
                         <p className="text-gray-900 mt-1">{location || "No location added"}</p>
                       </div>
                     </div>
+
                     <div>
                       <label className="text-sm font-semibold text-gray-700">Phone</label>
                       <p className="text-gray-900 mt-1">{phone || user?.phone_number || "No phone added"}</p>
                     </div>
-                    {/* --- Interests Display Block Added --- */}
+
                     <div>
                       <label className="text-sm font-semibold text-gray-700">Interests</label>
                       <p className="text-gray-900 mt-1">
-                        {Array.isArray(interests) && interests.length > 0
-                          ? interests.join(', ')
-                          : 'No interests selected'}
+                        {Array.isArray(interests) && interests.length > 0 ? interests.join(", ") : "No interests selected"}
                       </p>
                     </div>
-                    {/* --- End Interests Display Block --- */}
                   </div>
                 )}
               </div>
