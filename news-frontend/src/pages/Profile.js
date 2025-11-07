@@ -17,6 +17,7 @@ function Profile() {
   const [activeTab, setActiveTab] = useState("account");
 
   // Form fields
+  const [userName, setUserName] = useState("");
   const [bio, setBio] = useState("");
   const [website, setWebsite] = useState("");
   const [location, setLocation] = useState("");
@@ -35,6 +36,7 @@ function Profile() {
     try {
       const userResponse = await api.get("/users/me");
       setUser(userResponse.data);
+      setUserName(userResponse.data?.name || "");
 
       try {
         const profileResponse = await api.get("/profile");
@@ -63,24 +65,34 @@ function Profile() {
     }
   }, [navigate]);
 
-  // 2) Then use it in useEffect with proper deps
-  useEffect(() => {
-    if (!token) {
-      navigate("/login");
-      return;
-    }
-    fetchAllData();
-  }, [token, navigate, fetchAllData]);
+  // data load
+useEffect(() => {
+  if (!token) {
+    navigate("/login");
+    return;
+  }
+  fetchAllData();
+}, [token, navigate, fetchAllData]);
 
-  // 3) Save handler (unchanged except for debug log)
-  const handleSaveProfile = async (e) => {
+// save handler
+const handleSaveProfile = async (e) => {
   e.preventDefault();
   setSaving(true);
   setMessage("");
 
   try {
+    // 1) Update user name if changed (users table)
+    if ((user?.name || "") !== (userName || "").trim()) {
+      await api.put("/users/me", { name: (userName || "").trim() });
+    }
+
+    // 2) Save profile fields (user_profiles table)
     const profileData = {
-      bio, website, location, country, phone,
+      bio,
+      website,
+      location,
+      country,
+      phone,
       preferred_language: preferredLanguage,
       interests: Array.isArray(interests) ? interests : [],
       email_notifications: emailNotifications,
@@ -88,18 +100,17 @@ function Profile() {
     };
 
     if (profile) {
-      console.log("sending PUT /profile", profileData); // add this
       await api.put("/profile", profileData);
       setMessage("SUCCESS: Profile updated successfully!");
     } else {
-      console.log("sending POST /profile", profileData); // add this
       await api.post("/profile", profileData);
       setMessage("SUCCESS: Profile created successfully!");
     }
 
+    // 3) Exit edit mode and refresh both user + profile
     setEditing(false);
     setTimeout(() => setMessage(""), 3000);
-    fetchAllData();
+    await fetchAllData();
   } catch (error) {
     console.error("Error saving profile:", error);
     setMessage("ERROR: Failed to save profile. Please try again.");
@@ -107,6 +118,7 @@ function Profile() {
     setSaving(false);
   }
 };
+
 
 
 
@@ -209,27 +221,37 @@ function Profile() {
             {activeTab === "account" && (
               <div className="space-y-6">
                 <h2 className="text-xl font-bold text-gray-900 mb-4">Account Information</h2>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Name (from users table) */}
                   <div>
                     <label className="text-sm font-semibold text-gray-700">Name</label>
                     <p className="text-gray-900 mt-1 text-lg">{user?.name || "N/A"}</p>
                   </div>
+
+                  {/* Email (from users table) */}
                   <div>
                     <label className="text-sm font-semibold text-gray-700">Email</label>
                     <p className="text-gray-900 mt-1 text-lg">{user?.email || "N/A"}</p>
                   </div>
+
+                  {/* Country (from profile, NOT user) */}
                   <div>
                     <label className="text-sm font-semibold text-gray-700">Country</label>
-                    <p className="text-gray-900 mt-1 text-lg">{user?.country || "Not specified"}</p>
+                    <p className="text-gray-900 mt-1 text-lg">{country || "Not specified"}</p>
                   </div>
+
+                  {/* Role (from users table) */}
                   <div>
                     <label className="text-sm font-semibold text-gray-700">Role</label>
                     <p className="mt-1">
-                      <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                        user?.role === "admin"
-                          ? "bg-indigo-100 text-indigo-700"
-                          : "bg-gray-100 text-gray-700"
-                      }`}>
+                      <span
+                        className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                          user?.role === "admin"
+                            ? "bg-indigo-100 text-indigo-700"
+                            : "bg-gray-100 text-gray-700"
+                        }`}
+                      >
                         {user?.role || "user"}
                       </span>
                     </p>
@@ -255,6 +277,19 @@ function Profile() {
 
                 {editing ? (
                   <form onSubmit={handleSaveProfile} className="space-y-4">
+                    {/* Name (users table) */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Name</label>
+                      <input
+                        type="text"
+                        value={userName}
+                        onChange={(e) => setUserName(e.target.value)}
+                        placeholder="Your name"
+                        className="w-full border-2 border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      />
+                    </div>
+
+                    {/* Bio (profile) */}
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-1">Bio</label>
                       <textarea

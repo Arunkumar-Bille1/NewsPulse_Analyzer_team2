@@ -501,7 +501,30 @@ from fastapi import Depends, HTTPException
 
 @app.get("/users/me")
 def read_me(current: CurrentUser = Depends(get_current_user)):
-    return {"id": current.id, "email": current.email}
+    # fetch additional fields from users table if needed
+    res = (supabase.table("users")
+           .select("id,email,name,role")
+           .eq("id", current.id)
+           .limit(1)
+           .execute())
+    row = (res.data or [None])[0]
+    if row:
+        return {"id": row["id"], "email": row.get("email", ""), "name": row.get("name", ""), "role": row.get("role", "user")}
+    # fallback to token payload if row not found
+    return {"id": current.id, "email": current.email, "name": "", "role": current.role}
+
+
+
+@app.put("/users/me")
+def update_user(data: dict, current: CurrentUser = Depends(get_current_user)):
+    changes = {}
+    if "name" in data:
+        changes["name"] = (data["name"] or "").strip()
+    if not changes:
+        return {"ok": True}
+    supabase.table("users").update(changes).eq("id", current.id).execute()
+    return {"ok": True}
+
 
 # main.py (profile schema + endpoints)
 from pydantic import BaseModel, Field
@@ -537,46 +560,62 @@ DEFAULT_PROFILE = {
 
 
 
+# GET /profile
 @app.get("/profile")
 def get_profile(current: CurrentUser = Depends(get_current_user)):
-    res = (supabase.table("user_profiles")
-           .select("*")
-           .eq("user_id", current.id)
-           .limit(1)
-           .execute())
+    res = (
+        supabase.table("user_profiles")
+        .select("*")
+        .eq("user_id", current.id)
+        .limit(1)
+        .execute()
+    )
     row = (res.data or [None])[0]
     if not row:
-        # return a default object instead of 404 to keep UI simple
+        # keep your current behavior: return a default object (no 404)
         return {"user_id": current.id, **DEFAULT_PROFILE}
     return row
 
+# POST /profile -> upsert (create if missing, update if exists)
 @app.post("/profile")
 def upsert_profile(data: ProfileUpdate, current: CurrentUser = Depends(get_current_user)):
     payload = {"user_id": current.id, **data.dict(exclude_none=True)}
-    # ENSURE interests is always a list before upsert
+
+    # ensure types are consistent for jsonb
     if "interests" not in payload or not isinstance(payload["interests"], list):
         payload["interests"] = []
-    resp = (supabase.table("user_profiles")
-            .upsert(payload, on_conflict="user_id")
-            .execute())
-    if getattr(resp, "error", None):
+
+    resp = (
+        supabase.table("user_profiles")
+        .upsert(payload, on_conflict="user_id")
+        .execute()
+    )
+    # postgrest client raises on error; resp.error may not exist, so be lenient
+    if hasattr(resp, "error") and resp.error:
         raise HTTPException(status_code=500, detail="Failed to save profile")
     return {"ok": True}
 
 
+# PUT /profile -> also upsert (idempotent update that creates when missing)
 @app.put("/profile")
 def update_profile(data: ProfileUpdate, current: CurrentUser = Depends(get_current_user)):
     changes = data.dict(exclude_none=True)
-    # ENSURE interests is always a list before update
+
     if "interests" in changes and not isinstance(changes["interests"], list):
         changes["interests"] = []
+
+    # if there are no changes, do nothing
     if not changes:
         return {"ok": True}
-    resp = (supabase.table("user_profiles")
-            .update(changes)
-            .eq("user_id", current.id)
-            .execute())
-    if getattr(resp, "error", None):
+
+    # use upsert so first save for a new user creates the row
+    payload = {"user_id": current.id, **changes}
+    resp = (
+        supabase.table("user_profiles")
+        .upsert(payload, on_conflict="user_id")
+        .execute()
+    )
+    if hasattr(resp, "error") and resp.error:
         raise HTTPException(status_code=500, detail="Failed to update profile")
     return {"ok": True}
 
