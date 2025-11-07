@@ -14,8 +14,8 @@ function Profile() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [activeTab, setActiveTab] = useState("account"); // account, profile, preferences
-  
+  const [activeTab, setActiveTab] = useState("account");
+
   // Form fields
   const [bio, setBio] = useState("");
   const [website, setWebsite] = useState("");
@@ -25,7 +25,7 @@ function Profile() {
   const [interests, setInterests] = useState([]);
   const [emailNotifications, setEmailNotifications] = useState(false);
   const [trendingAlerts, setTrendingAlerts] = useState(false);
-  
+
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
 
@@ -39,13 +39,10 @@ function Profile() {
 
   const fetchAllData = async () => {
     try {
-      // Fetch user info
       const userResponse = await axios.get("http://127.0.0.1:8000/users/me", {
         headers: { Authorization: `Bearer ${token}` }
       });
       setUser(userResponse.data);
-
-      // Fetch profile
       try {
         const profileResponse = await axios.get("http://127.0.0.1:8000/profile", {
           headers: { Authorization: `Bearer ${token}` }
@@ -57,7 +54,7 @@ function Profile() {
         setLocation(profileData.location || "");
         setPhone(profileData.phone || "");
         setPreferredLanguage(profileData.preferred_language || "en");
-        setInterests(profileData.interests || []);
+        setInterests(Array.isArray(profileData.interests) ? profileData.interests : []);
         setEmailNotifications(profileData.email_notifications || false);
         setTrendingAlerts(profileData.trending_alerts || false);
       } catch (error) {
@@ -77,44 +74,52 @@ function Profile() {
   };
 
   const handleSaveProfile = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    setMessage("");
+  e.preventDefault();
+  setSaving(true);
+  setMessage("");
 
-    try {
-      const profileData = {
-        bio,
-        website,
-        location,
-        phone,
-        preferred_language: preferredLanguage,
-        interests,
-        email_notifications: emailNotifications,
-        trending_alerts: trendingAlerts
-      };
-      
-      if (profile) {
-        await axios.put("http://127.0.0.1:8000/profile", profileData, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setMessage("SUCCESS: Profile updated successfully!");
-      } else {
-        await axios.post("http://127.0.0.1:8000/profile", profileData, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setMessage("SUCCESS: Profile created successfully!");
-      }
-      
-      setEditing(false);
-      setTimeout(() => setMessage(""), 3000);
-      fetchAllData();
-    } catch (error) {
-      console.error("Error saving profile:", error);
-      setMessage("ERROR: Failed to save profile. Please try again.");
-    } finally {
-      setSaving(false);
+  const token = localStorage.getItem("token");
+  if (!token) {
+    setMessage("ERROR: Not authenticated. Please log in.");
+    setSaving(false);
+    return;
+  }
+
+  try {
+    const profileData = {
+      bio,
+      website,
+      location,
+      phone,
+      preferred_language: preferredLanguage,
+      interests: Array.isArray(interests) ? interests : [], // always array
+      email_notifications: emailNotifications,
+      trending_alerts: trendingAlerts
+    };
+
+    if (profile) {
+      await axios.put("http://127.0.0.1:8000/profile", profileData, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setMessage("SUCCESS: Profile updated successfully!");
+    } else {
+      await axios.post("http://127.0.0.1:8000/profile", profileData, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setMessage("SUCCESS: Profile created successfully!");
     }
-  };
+
+    setEditing(false);
+    setTimeout(() => setMessage(""), 3000);
+    fetchAllData();  // Refresh profile details after save
+  } catch (error) {
+    console.error("Error saving profile:", error);
+    setMessage("ERROR: Failed to save profile. Please try again.");
+  } finally {
+    setSaving(false);
+  }
+};
+
 
   const toggleInterest = (topic) => {
     setInterests(prev =>
@@ -167,8 +172,8 @@ function Profile() {
 
         {message && (
           <div className={`mb-6 p-4 rounded-lg border ${
-            message.startsWith("SUCCESS") 
-              ? "bg-green-50 text-green-800 border-green-300" 
+            message.startsWith("SUCCESS")
+              ? "bg-green-50 text-green-800 border-green-300"
               : "bg-red-50 text-red-800 border-red-300"
           }`}>
             {message.replace("SUCCESS: ", "").replace("ERROR: ", "")}
@@ -232,8 +237,8 @@ function Profile() {
                     <label className="text-sm font-semibold text-gray-700">Role</label>
                     <p className="mt-1">
                       <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                        user?.role === "admin" 
-                          ? "bg-indigo-100 text-indigo-700" 
+                        user?.role === "admin"
+                          ? "bg-indigo-100 text-indigo-700"
                           : "bg-gray-100 text-gray-700"
                       }`}>
                         {user?.role || "user"}
@@ -350,6 +355,16 @@ function Profile() {
                       <label className="text-sm font-semibold text-gray-700">Phone</label>
                       <p className="text-gray-900 mt-1">{phone || user?.phone_number || "No phone added"}</p>
                     </div>
+                    {/* --- Interests Display Block Added --- */}
+                    <div>
+                      <label className="text-sm font-semibold text-gray-700">Interests</label>
+                      <p className="text-gray-900 mt-1">
+                        {Array.isArray(interests) && interests.length > 0
+                          ? interests.join(', ')
+                          : 'No interests selected'}
+                      </p>
+                    </div>
+                    {/* --- End Interests Display Block --- */}
                   </div>
                 )}
               </div>
@@ -359,8 +374,6 @@ function Profile() {
             {activeTab === "preferences" && (
               <form onSubmit={handleSaveProfile} className="space-y-6">
                 <h2 className="text-xl font-bold text-gray-900 mb-4">User Preferences</h2>
-
-                {/* Language */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Preferred Language</label>
                   <div className="flex space-x-3">
@@ -388,8 +401,6 @@ function Profile() {
                     </button>
                   </div>
                 </div>
-
-                {/* Interests */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Areas of Interest</label>
                   <div className="flex flex-wrap gap-2">
@@ -409,8 +420,6 @@ function Profile() {
                     ))}
                   </div>
                 </div>
-
-                {/* Notifications */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Notifications</label>
                   <div className="space-y-3">
@@ -434,7 +443,6 @@ function Profile() {
                     </label>
                   </div>
                 </div>
-
                 <div className="flex space-x-3 pt-4">
                   <button
                     type="submit"
@@ -456,7 +464,6 @@ function Profile() {
           </div>
         </div>
 
-        {/* Admin Access Card */}
         {user?.role === "admin" && (
           <div className="bg-indigo-50 border-2 border-indigo-200 rounded-lg p-6">
             <h3 className="text-lg font-bold text-indigo-900 mb-2">Admin Access</h3>

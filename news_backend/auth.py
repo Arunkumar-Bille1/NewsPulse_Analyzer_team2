@@ -1,54 +1,69 @@
-from datetime import datetime, timedelta
+# auth.py
+import os
 import secrets
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from fastapi import HTTPException, Depends, APIRouter, status
+from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from passlib.context import CryptContext
-from fastapi import HTTPException, Depends, APIRouter
-from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
-# ✅ Import database and models at the top
 from news_backend.database import get_db
 from news_backend.models import PasswordResetToken, User
 
-SECRET_KEY = "mysupersecretkey12345"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-RESET_TOKEN_EXPIRE_MINUTES = 15
+# Config from environment (avoid hardcoding in prod)
+SECRET_KEY = os.getenv("JWT_SECRET", "dev-secret-change-me")
+ALGORITHM = os.getenv("JWT_ALG", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_MINUTES", "60"))
+RESET_TOKEN_EXPIRE_MINUTES = int(os.getenv("RESET_TOKEN_EXPIRE_MINUTES", "15"))
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
-# ==========================================================
-# 🔐 Authentication Utility Functions
-# ==========================================================
+# -------------------- Auth helpers --------------------
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
-def create_access_token(data: dict, expires_delta: timedelta = None):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta if expires_delta else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+def create_access_token(*, sub: int, email: str, role: Optional[str] = "user") -> str:
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(sub),          # always string in JWT
+        "email": email,
+        "role": role,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)).timestamp()),
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+def decode_access_token(token: str) -> dict:
+    return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+
+# auth.py — temporary debugging
+from jose import JWTError
+from fastapi import HTTPException, status
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email = payload.get("sub")
-        if email is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        user = db.query(User).filter(User.email == email).first()
+        payload = decode_access_token(token)
+        sub = payload.get("sub")
+        email = payload.get("email")
+        if not sub or not email:
+            raise ValueError("missing claims")
+        user = db.query(User).filter(User.id == int(sub)).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         return user
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Token expired or invalid")
+    except JWTError as e:
+        print("JWT error:", repr(e))  # TEMP: inspect reason
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
-# ==========================================================
-# 🔁 Password Reset
-# ==========================================================
+
+# -------------------- Password reset --------------------
 def create_password_reset_token(email: str, db: Session):
     user = db.query(User).filter(User.email == email).first()
     if not user:
@@ -76,22 +91,20 @@ def reset_user_password(user_id: int, new_password: str, db: Session):
     db.commit()
     return True
 
-# ==========================================================
-# 🚀 FastAPI Router
-# ==========================================================
+# -------------------- Routes --------------------
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 @router.post("/register")
 def register_user(request: dict, db: Session = Depends(get_db)):
-    # ✅ Now get_db is properly recognized
     email = request.get("email")
     password = request.get("password")
+    if not email or not password:
+        raise HTTPException(status_code=400, detail="Email and password required")
 
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    hashed_pw = hash_password(password)
-    new_user = User(email=email, hashed_password=hashed_pw)
+    new_user = User(email=email, hashed_password=hash_password(password))
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
@@ -101,10 +114,13 @@ def register_user(request: dict, db: Session = Depends(get_db)):
 def login_user(request: dict, db: Session = Depends(get_db)):
     email = request.get("email")
     password = request.get("password")
+    if not email or not password:
+        raise HTTPException(status_code=400, detail="Email and password required")
 
     user = db.query(User).filter(User.email == email).first()
     if not user or not verify_password(password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    access_token = create_access_token({"sub": user.email})
+    # Issue token with sub = user.id (matches get_current_user)
+    access_token = create_access_token(sub=user.id, email=user.email)
     return {"access_token": access_token, "token_type": "bearer"}

@@ -16,7 +16,7 @@ def send_reset_email(email: str, reset_link: str):
     if not sender_email or not sender_password:
         print(" SMTP credentials not configured in .env file")
         return False
-    
+
     # Create message
     message = MIMEMultipart("alternative")
     message["Subject"] = "🔐 Password Reset Request - News Intelligence Platform"
