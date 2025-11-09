@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
+// pages/AdminDashboard.js
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import axios from "axios";
+import api from "../api";
 
 function AdminDashboard() {
   const [users, setUsers] = useState([]);
@@ -8,85 +9,65 @@ function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [currentUser, setCurrentUser] = useState(null);
-  
   const navigate = useNavigate();
-  const token = localStorage.getItem("token");
 
   useEffect(() => {
-    if (!token) {
-      navigate("/login");
-      return;
-    }
-    checkAdminAccess();
-  }, []);
+  const run = async () => {
+    const tok = localStorage.getItem("token");
+    if (!tok) { navigate("/login"); return; }
 
-  const checkAdminAccess = async () => {
+    // TEMP: probe /admin/users with forced header to confirm header reaches server
     try {
-      const userResponse = await axios.get("http://127.0.0.1:8000/users/me", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      if (userResponse.data.role !== "admin") {
+      const probe = await api.get("/admin/users", { headers: { Authorization: `Bearer ${tok}` } });
+      console.log("probe /admin/users:", probe.status);
+    } catch (e) {
+      console.log("probe failed:", e?.response?.status, e?.response?.data);
+    }
+
+    try {
+      // 1) Verify admin
+      const me = await api.get("/users/me");
+      if ((me.data?.role || "").toLowerCase() !== "admin") {
         setMessage("ERROR: Access denied. Admin privileges required.");
         setTimeout(() => navigate("/"), 2000);
         return;
       }
-      
-      setCurrentUser(userResponse.data);
-      fetchDashboardData();
-    } catch (error) {
-      console.error("Error checking admin access:", error);
-      if (error.response?.status === 401) {
-        localStorage.removeItem("token");
-        navigate("/login");
-      }
-    }
-  };
+      setCurrentUser(me.data);
 
-  const fetchDashboardData = async () => {
-    try {
-      const usersResponse = await axios.get("http://127.0.0.1:8000/admin/users", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setUsers(usersResponse.data);
+      // 2) Load users (keep forced header while debugging; remove once interceptor is confirmed)
+      const usersRes = await api.get("/admin/users", { headers: { Authorization: `Bearer ${tok}` } });
+      const list = Array.isArray(usersRes.data) ? usersRes.data : [];
+      setUsers(list);
 
+      // 3) Load stats (fallback if missing)
       try {
-        const statsResponse = await axios.get("http://127.0.0.1:8000/admin/dashboard", {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setStats(statsResponse.data);
-      } catch (statsError) {
-        // Calculate stats from users if backend doesn't provide them
-        const totalUsers = usersResponse.data.length;
-        const adminUsers = usersResponse.data.filter(u => u.role === "admin").length;
-        const regularUsers = totalUsers - adminUsers;
-        setStats({
-          total_users: totalUsers,
-          admin_users: adminUsers,
-          regular_users: regularUsers,
-          active_today: totalUsers // Simplified
-        });
+        const statsRes = await api.get("/admin/dashboard");
+        setStats(statsRes.data);
+      } catch {
+        const total = list.length;
+        const admins = list.filter(x => (x.role || "").toLowerCase() === "admin").length;
+        setStats({ total_users: total, admin_users: admins, regular_users: total - admins, active_today: total });
       }
-    } catch (error) {
-      console.error("Error fetching dashboard data:", error);
+    } catch (e) {
+      console.error(e);
       setMessage("ERROR: Failed to load dashboard data");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDeleteUser = async (userId) => {
-    if (!window.confirm("Are you sure you want to delete this user? This action cannot be undone.")) {
-      return;
-    }
+  run();
+}, [navigate]);
 
+  const handleDeleteUser = async (userId) => {
+    if (!window.confirm("Are you sure you want to delete this user? This action cannot be undone.")) return;
     try {
-      await axios.delete(`http://127.0.0.1:8000/admin/users/${userId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.delete(`/admin/users/${userId}`);
       setMessage("SUCCESS: User deleted successfully");
       setTimeout(() => setMessage(""), 3000);
-      fetchDashboardData();
+      // Refresh table
+      const ures = await api.get("/admin/users");
+      setUsers(Array.isArray(ures.data) ? ures.data : []);
     } catch (error) {
       console.error("Error deleting user:", error);
       setMessage("ERROR: Failed to delete user");
@@ -105,6 +86,8 @@ function AdminDashboard() {
     );
   }
 
+  // TODO: render your header, stats cards using `stats`, and user table using `users`
+  // Pass handleDeleteUser to your delete button
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-6">

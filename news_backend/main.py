@@ -44,6 +44,7 @@ from news_backend.supabase_client import (
     fetch_articles_batch,
     update_article_keywords
 )
+from news_backend.admin_routes import router as admin_router  # ok to keep at top
 
 # =========================================================
 # App init
@@ -65,6 +66,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(admin_router)
 
 # =========================================================
 # Security / JWT - SINGLE SOURCE OF TRUTH

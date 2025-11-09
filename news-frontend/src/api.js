@@ -136,55 +136,69 @@
 //export default api;
 
 
-
 // src/api.js
-import axios from 'axios';
+import axios from "axios";
 
-const API_BASE_URL = 'http://localhost:8000';
+// Single source of truth for API base (override via frontend .env)
+const API_BASE = process.env.REACT_APP_API_BASE || "http://127.0.0.1:8000";
 
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: API_BASE,
   timeout: 10000,
 });
 
+// 1) Always attach the latest token to every request
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  const tok = localStorage.getItem("token");
+  if (tok) config.headers.Authorization = `Bearer ${tok}`;
+  console.log("Auth header set for", config.url, !!tok);
   return config;
 });
 
+// 2) Only force logout on auth-check endpoints (/users/me, /auth/*)
+//    Admin endpoints (/admin/*) will surface errors in the UI instead of clearing the session
 api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user_email');
-      window.location.href = '/login';
+  (res) => res,
+  (err) => {
+    const url = err?.config?.url || "";
+    if (err?.response?.status === 401 && (url.startsWith("/users/me") || url.startsWith("/auth"))) {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user_email");
+      window.location.href = "/login";
     }
-    return Promise.reject(error);
+    return Promise.reject(err);
   }
 );
 
+/* =========================
+   Convenience API helpers
+   ========================= */
+
 // Auth
-export const registerUser = async (userData) => api.post('/auth/register', userData);
-export const loginUser = async (email, password) => api.post('/auth/login', { email, password });
-export const forgotPassword = async (email) => api.post('/auth/forgot-password', { email });
-export const resetPassword = async (token, newPassword) =>
-  api.post('/auth/reset-password', { token, new_password: newPassword });
+export const registerUser = (userData) => api.post("/auth/register", userData);
+export const loginUser = (email, password) => api.post("/auth/login", { email, password });
+
+// (Optional endpoints; include only if implemented on backend)
+export const forgotPassword = (email) => api.post("/auth/forgot-password", { email });
+export const resetPassword = (token, newPassword) =>
+  api.post("/auth/reset-password", { token, new_password: newPassword });
 
 // User
-export const getCurrentUser = async () => api.get('/users/me').then(r => r.data);
+export const getCurrentUser = async () => (await api.get("/users/me")).data;
 
 // News
-export const getNews = async (query = 'technology') =>
-  api.get(`/news?query=${encodeURIComponent(query)}`).then(r => r.data);
-
-export const getStoredNews = async () =>
-  api.get('/news_stored').then(r => r.data); // note: path changed
+export const getNews = async (query = "technology") =>
+  (await api.get(`/news`, { params: { query } })).data;
+export const getStoredNews = async () => (await api.get("/news_stored")).data;
 
 // Profile
-export const getProfile = async () => api.get('/profile');
-export const updateProfile = async (profileData) => api.put('/profile', profileData);
+export const getProfile = () => api.get("/profile");
+export const updateProfile = (profileData) => api.put("/profile", profileData);
 
-export const testConnection = async () => api.get('/');
+// Admin (now available for the dashboard UI)
+export const getAdminUsers = async () => (await api.get("/admin/users")).data;
+export const getAdminStats = async () => (await api.get("/admin/dashboard")).data;
+export const deleteAdminUser = (userId) => api.delete(`/admin/users/${userId}`);
+
+export const testConnection = () => api.get("/");
 export default api;
