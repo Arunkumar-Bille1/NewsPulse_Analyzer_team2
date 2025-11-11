@@ -11,29 +11,60 @@ function Login() {
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setMessage("");
+  e.preventDefault();
+  setLoading(true);
+  setMessage("");
 
-    try {
-      const res = await loginUser(email, password);
-      localStorage.setItem("token", res.data.access_token);
-      localStorage.setItem("user_email", email);
-      setMessage("SUCCESS: Login successful! Redirecting...");
-      setTimeout(() => navigate("/"), 800);
-    } catch (error) {
-      console.error("Login error:", error);
-      if (error.response?.status === 401) {
-        setMessage("ERROR: Invalid email or password");
-      } else if (error.response?.status === 404) {
-        setMessage("ERROR: User not found. Please register.");
-      } else {
-        setMessage("ERROR: Login failed. Please try again.");
-      }
-    } finally {
-      setLoading(false);
+  try {
+    // Basic client-side validation
+    if (!email?.trim() || !password?.trim()) {
+      setMessage("ERROR: Email and password are required.");
+      return;
     }
-  };
+
+    // Sends { email, password } JSON; avoids 422
+    const res = await loginUser(email.trim(), password);
+
+    // Support both naming styles from backend
+    const token =
+      res?.data?.access_token ||
+      res?.data?.accesstoken ||
+      res?.data?.token ||
+      null;
+
+    if (!token || typeof token !== "string") {
+      throw new Error("No token returned from server");
+    }
+
+    // Persist session
+    localStorage.setItem("token", token);
+    localStorage.setItem("user_email", email.trim());
+
+    setMessage("SUCCESS: Login successful! Redirecting...");
+    // Small delay for UX and to let interceptors pick up token
+    setTimeout(() => navigate("/"), 600);
+  } catch (error) {
+    console.error("Login error:", error?.response?.data || error.message);
+
+    const status = error?.response?.status;
+    const serverMsg =
+      error?.response?.data?.detail ||
+      error?.response?.data?.message ||
+      error?.message;
+
+    if (status === 401) {
+      setMessage("ERROR: Invalid email or password.");
+    } else if (status === 404) {
+      setMessage("ERROR: User not found. Please register.");
+    } else if (status === 422) {
+      setMessage("ERROR: Invalid request. Please re-enter your credentials.");
+    } else {
+      setMessage(`ERROR: Login failed. ${serverMsg || "Please try again."}`);
+    }
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="min-h-screen flex bg-gradient-to-br from-indigo-50 via-white to-purple-50">

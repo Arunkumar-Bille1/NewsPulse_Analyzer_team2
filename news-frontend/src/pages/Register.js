@@ -30,47 +30,68 @@ function Register() {
 
   const passwordStrength = getPasswordStrength(password);
 
-  const handleRegister = async (e) => {
-    e.preventDefault();
-    
+
+// Replace your current submit handler
+const handleRegister = async (e) => {
+  e.preventDefault();
+  setMessage('');
+  setLoading(true);
+
+  try {
+    if (!name?.trim() || !email?.trim() || !password?.trim()) {
+      setMessage('ERROR: Name, email and password are required.');
+      return;
+    }
     if (password !== confirm) {
-      setMessage("ERROR: Passwords do not match.");
+      setMessage('ERROR: Passwords do not match.');
       return;
     }
 
-    if (password.length < 6) {
-      setMessage("ERROR: Password must be at least 6 characters.");
-      return;
-    }
+    const payload = {
+      name: name.trim(),
+      email: email.trim(),
+      password,
+      ...(phoneNumber ? { phonenumber: phoneNumber } : {}),
+      ...(country ? { country } : {}),
+    };
 
-    setLoading(true);
-    setMessage("");
+    const res = await registerUser(payload);
 
-    try {
-      await registerUser({
-        name,
-        email,
-        password,
-        phone_number: phoneNumber,
-        country,
-        language: "English",
-        interests: [],
-        role: "user"
-      });
-      
-      setMessage("SUCCESS: Registration successful! Redirecting to login...");
-      setTimeout(() => navigate("/login"), 1500);
-    } catch (error) {
-      console.error("Registration error:", error);
-      if (error.response?.status === 400) {
-        setMessage("ERROR: Email already registered");
-      } else {
-        setMessage("ERROR: Registration failed. Please try again.");
-      }
-    } finally {
-      setLoading(false);
+    const token =
+      res?.data?.access_token ||
+      res?.data?.accesstoken ||
+      res?.data?.token ||
+      null;
+
+    if (token) {
+      localStorage.setItem('token', token);
+      localStorage.setItem('user_email', payload.email);
+      setMessage('SUCCESS: Account created! Redirecting...');
+      setTimeout(() => navigate('/'), 800);
+    } else {
+      setMessage('SUCCESS: Account created! Please log in.');
+      setTimeout(() => navigate('/login'), 800);
     }
-  };
+  } catch (error) {
+    console.error('Registration error:', error?.response?.data || error.message);
+    const status = error?.response?.status;
+    const detail =
+      error?.response?.data?.detail ||
+      error?.response?.data?.message ||
+      error?.message;
+
+    if (status === 400 && /already/i.test(String(detail))) {
+      setMessage('ERROR: Email already registered.');
+    } else if (status === 422) {
+      setMessage('ERROR: Invalid form data. Please check inputs.');
+    } else {
+      setMessage(`ERROR: Registration failed. ${detail || 'Please try again.'}`);
+    }
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     <div className="min-h-screen flex bg-gradient-to-br from-indigo-50 via-white to-purple-50">

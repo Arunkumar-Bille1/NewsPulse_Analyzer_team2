@@ -1,96 +1,78 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import axios from "axios";
+// src/pages/AdminDashboard.js
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { getCurrentUser, getAdminUsers, getAdminStats } from '../api';
+import api from '../api';
 
 function AdminDashboard() {
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState("");
-  const [currentUser, setCurrentUser] = useState(null);
-  
+  const [message, setMessage] = useState('');
+  const [meUser, setMeUser] = useState(null);
   const navigate = useNavigate();
-  const token = localStorage.getItem("token");
 
   useEffect(() => {
-    if (!token) {
-      navigate("/login");
-      return;
-    }
-    checkAdminAccess();
-  }, []);
-
-  const checkAdminAccess = async () => {
-    try {
-      const userResponse = await axios.get("http://127.0.0.1:8000/users/me", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      if (userResponse.data.role !== "admin") {
-        setMessage("ERROR: Access denied. Admin privileges required.");
-        setTimeout(() => navigate("/"), 2000);
-        return;
-      }
-      
-      setCurrentUser(userResponse.data);
-      fetchDashboardData();
-    } catch (error) {
-      console.error("Error checking admin access:", error);
-      if (error.response?.status === 401) {
-        localStorage.removeItem("token");
-        navigate("/login");
-      }
-    }
-  };
-
-  const fetchDashboardData = async () => {
-    try {
-      const usersResponse = await axios.get("http://127.0.0.1:8000/admin/users", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setUsers(usersResponse.data);
+    const run = async () => {
+      const tok = localStorage.getItem('token');
+      if (!tok) { navigate('/login'); return; }
 
       try {
-        const statsResponse = await axios.get("http://127.0.0.1:8000/admin/dashboard", {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setStats(statsResponse.data);
-      } catch (statsError) {
-        // Calculate stats from users if backend doesn't provide them
-        const totalUsers = usersResponse.data.length;
-        const adminUsers = usersResponse.data.filter(u => u.role === "admin").length;
-        const regularUsers = totalUsers - adminUsers;
-        setStats({
-          total_users: totalUsers,
-          admin_users: adminUsers,
-          regular_users: regularUsers,
-          active_today: totalUsers // Simplified
-        });
+        const me = await getCurrentUser();
+        setMeUser(me);
+        if ((me?.role || '').toLowerCase() !== 'admin') {
+          setMessage('ERROR: Access denied. Admin privileges required.');
+          setTimeout(() => navigate('/'), 1500);
+          return;
+        }
+
+        const [usersRes, statsRes] = await Promise.all([
+          getAdminUsers(),
+          getAdminStats(),
+        ]);
+
+        const list = Array.isArray(usersRes) ? usersRes : (usersRes?.data || []);
+        setUsers(list || []);
+
+        const s = statsRes?.data || statsRes || null;
+        if (s) {
+          setStats({
+            total_users: s.total_users ?? s.total ?? 0,
+            admin_users: s.admin_users ?? s.admins ?? 0,
+            regular_users:
+              (s.total_users ?? s.total ?? 0) - (s.admin_users ?? s.admins ?? 0),
+          });
+        } else {
+          const total = (list || []).length;
+          const admins = (list || []).filter(x => (x.role || '').toLowerCase() === 'admin').length;
+          setStats({ total_users: total, admin_users: admins, regular_users: total - admins });
+        }
+      } catch (e) {
+        console.error('Admin load failed:', e?.response?.data || e.message);
+        setMessage('ERROR: Failed to load dashboard data');
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error("Error fetching dashboard data:", error);
-      setMessage("ERROR: Failed to load dashboard data");
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+    run();
+  }, [navigate]);
 
   const handleDeleteUser = async (userId) => {
-    if (!window.confirm("Are you sure you want to delete this user? This action cannot be undone.")) {
-      return;
-    }
-
+    if (!window.confirm('Are you sure you want to delete this user? This action cannot be undone.')) return;
     try {
-      await axios.delete(`http://127.0.0.1:8000/admin/users/${userId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setMessage("SUCCESS: User deleted successfully");
-      setTimeout(() => setMessage(""), 3000);
-      fetchDashboardData();
+      await api.delete(`/admin/users/${userId}`);
+      setMessage('SUCCESS: User deleted successfully');
+      setTimeout(() => setMessage(''), 3000);
+      const refreshed = await getAdminUsers();
+      const list = Array.isArray(refreshed) ? refreshed : (refreshed?.data || []);
+      setUsers(list || []);
+      const total = (list || []).length;
+      const admins = (list || []).filter(x => (x.role || '').toLowerCase() === 'admin').length;
+      setStats({ total_users: total, admin_users: admins, regular_users: total - admins });
     } catch (error) {
-      console.error("Error deleting user:", error);
-      setMessage("ERROR: Failed to delete user");
-      setTimeout(() => setMessage(""), 3000);
+      console.error('Error deleting user:', error?.response?.data || error.message);
+      setMessage('ERROR: Failed to delete user');
+      setTimeout(() => setMessage(''), 3000);
     }
   };
 
@@ -117,13 +99,13 @@ function AdminDashboard() {
             </div>
             <div className="flex space-x-3">
               <button
-                onClick={() => navigate("/profile")}
+                onClick={() => navigate('/profile')}
                 className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-semibold transition-colors border border-gray-300"
               >
                 My Profile
               </button>
               <button
-                onClick={() => navigate("/")}
+                onClick={() => navigate('/')}
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold transition-colors"
               >
                 Back to Home
@@ -133,20 +115,30 @@ function AdminDashboard() {
         </div>
 
         {message && (
-          <div className={`mb-6 p-4 rounded-lg border ${
-            message.startsWith("SUCCESS") 
-              ? "bg-green-50 text-green-800 border-green-300" 
-              : "bg-red-50 text-red-800 border-red-300"
-          }`}>
+          <div
+            className={`mb-6 p-4 rounded-lg border ${
+              message.startsWith('SUCCESS')
+                ? 'bg-green-50 text-green-800 border-green-300'
+                : 'bg-red-50 text-red-800 border-red-300'
+            }`}
+          >
             <div className="flex items-center">
               <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                {message.startsWith("SUCCESS") ? (
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
+                {message.startsWith('SUCCESS') ? (
+                  <path
+                    fillRule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                    clipRule="evenodd"
+                  />
                 ) : (
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/>
+                  <path
+                    fillRule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                    clipRule="evenodd"
+                  />
                 )}
               </svg>
-              {message.replace("SUCCESS: ", "").replace("ERROR: ", "")}
+              {message.replace('SUCCESS: ', '').replace('ERROR: ', '')}
             </div>
           </div>
         )}
@@ -163,7 +155,7 @@ function AdminDashboard() {
                 </div>
                 <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center">
                   <svg className="w-6 h-6 text-indigo-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
+                    <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
                   </svg>
                 </div>
               </div>
@@ -178,7 +170,11 @@ function AdminDashboard() {
                 </div>
                 <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
                   <svg className="w-6 h-6 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-6-3a2 2 0 11-4 0 2 2 0 014 0zm-2 4a5 5 0 00-4.546 2.916A5.986 5.986 0 0010 16a5.986 5.986 0 004.546-2.084A5 5 0 0010 11z" clipRule="evenodd"/>
+                    <path
+                      fillRule="evenodd"
+                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-6-3a2 2 0 11-4 0 2 2 0 014 0zm-2 4a5 5 0 00-4.546 2.916A5.986 5.986 0 0010 16a5.986 5.986 0 004.546-2.084A5 5 0 0010 11z"
+                      clipRule="evenodd"
+                    />
                   </svg>
                 </div>
               </div>
@@ -193,7 +189,7 @@ function AdminDashboard() {
                 </div>
                 <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
                   <svg className="w-6 h-6 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/>
+                    <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" />
                   </svg>
                 </div>
               </div>
@@ -208,7 +204,11 @@ function AdminDashboard() {
                 </div>
                 <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
                   <svg className="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3.293 1.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L7.586 10 5.293 7.707a1 1 0 010-1.414zM11 12a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd"/>
+                    <path
+                      fillRule="evenodd"
+                      d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3.293 1.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L7.586 10 5.293 7.707a1 1 0 010-1.414zM11 12a1 1 0 100 2h3a1 1 0 100-2h-3z"
+                      clipRule="evenodd"
+                    />
                   </svg>
                 </div>
               </div>
@@ -226,7 +226,7 @@ function AdminDashboard() {
               </div>
             </div>
           </div>
-          
+
           {users.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -246,37 +246,39 @@ function AdminDashboard() {
                         <div className="flex items-center">
                           <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center mr-3">
                             <span className="text-indigo-600 font-semibold text-sm">
-                              {user.name.charAt(0).toUpperCase()}
+                              {(user.name || '').charAt(0).toUpperCase()}
                             </span>
                           </div>
-                          <div className="text-sm font-semibold text-gray-900">{user.name}</div>
+                          <div className="text-sm font-semibold text-gray-900">{user.name || '(no name)'}</div>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-600">{user.email}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          user.role === "admin" 
-                            ? "bg-indigo-100 text-indigo-700 border border-indigo-200" 
-                            : "bg-gray-100 text-gray-700 border border-gray-200"
-                        }`}>
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                            (user.role || '') === 'admin'
+                              ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                              : 'bg-gray-100 text-gray-700 border border-gray-200'
+                          }`}
+                        >
                           {user.role}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                        {user.country || "Not specified"}
+                        {user.country || 'Not specified'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button
                           onClick={() => handleDeleteUser(user.id)}
-                          disabled={user.id === currentUser?.id}
+                          disabled={meUser && user.id === meUser.id}
                           className={`font-semibold ${
-                            user.id === currentUser?.id 
-                              ? "text-gray-400 cursor-not-allowed" 
-                              : "text-red-600 hover:text-red-800"
+                            meUser && user.id === meUser.id
+                              ? 'text-gray-400 cursor-not-allowed'
+                              : 'text-red-600 hover:text-red-800'
                           }`}
-                          title={user.id === currentUser?.id ? "Cannot delete yourself" : "Delete user"}
+                          title={meUser && user.id === meUser.id ? 'Cannot delete yourself' : 'Delete user'}
                         >
                           Delete
                         </button>

@@ -1,190 +1,127 @@
-//import axios from 'axios';
-//
-//const API_BASE_URL = 'http://localhost:8000';
-//
-//const api = axios.create({
-//  baseURL: API_BASE_URL,
-//  timeout: 10000,
-//});
-//
-//// Add token to requests automatically
-//api.interceptors.request.use((config) => {
-//  const token = localStorage.getItem('token');
-//  if (token) {
-//    config.headers.Authorization = `Bearer ${token}`;
-//  }
-//  return config;
-//});
-//
-//// Handle 401 errors globally
-//api.interceptors.response.use(
-//  (response) => response,
-//  (error) => {
-//    if (error.response?.status === 401) {
-//      localStorage.removeItem('token');
-//      localStorage.removeItem('user_email');
-//      window.location.href = '/login';
-//    }
-//    return Promise.reject(error);
-//  }
-//);
-//
-//
-//export const registerUser = async (userData) => {
-//  try {
-//    const response = await api.post('/register', userData);
-//    return response;
-//  } catch (error) {
-//    throw error;
-//  }
-//};
-//
-//// Login user
-//export const loginUser = async (email, password) => {
-//  try {
-//    const response = await api.post('/login', { email, password });
-//    return response;
-//  } catch (error) {
-//    throw error;
-//  }
-//};
-//
-//
-//// Get current user
-//export const getCurrentUser = async () => {
-//  try {
-//    const response = await api.get('/users/me');
-//    return response.data;
-//  } catch (error) {
-//    throw error;
-//  }
-//};
-//
-//// Get news with query
-//export const getNews = async (query = 'technology') => {
-//  try {
-//    const response = await api.get(`/news?query=${encodeURIComponent(query)}`);
-//    return response.data;
-//  } catch (error) {
-//    throw error;
-//  }
-//};
-//
-//// Get stored news
-//export const getStoredNews = async () => {
-//  try {
-//    const response = await api.get('/stored-news');
-//    return response.data;
-//  } catch (error) {
-//    throw error;
-//  }
-//};
-//
-//// Test connection
-//export const testConnection = async () => {
-//  try {
-//    const response = await api.get('/');
-//    return response;
-//  } catch (error) {
-//    throw error;
-//  }
-//};
-//
-//// Forgot password
-//export const forgotPassword = async (email) => {
-//  try {
-//    const response = await api.post('/forgot-password', { email });
-//    return response;
-//  } catch (error) {
-//    throw error;
-//  }
-//};
-//
-//// Reset password
-//export const resetPassword = async (token, newPassword) => {
-//  try {
-//    const response = await api.post('/reset-password', {
-//      token,
-//      new_password: newPassword
-//    });
-//    return response;
-//  } catch (error) {
-//    throw error;
-//  }
-//};
-//
-//// Get profile
-//export const getProfile = async () => {
-//  try {
-//    const response = await api.get('/profile');
-//    return response;
-//  } catch (error) {
-//    throw error;
-//  }
-//};
-//
-//// Update profile
-//export const updateProfile = async (profileData) => {
-//  try {
-//    const response = await api.put('/profile', profileData);
-//    return response;
-//  } catch (error) {
-//    throw error;
-//  }
-//};
-//
-//export default api;
-
-
-
 // src/api.js
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:8000';
+// Configure API base URL (dev fallback to 127.0.0.1 avoids IPv6 quirks)
+const API_BASE = process.env.REACT_APP_API_BASE || 'http://127.0.0.1:8000';
 
+// Single axios instance
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: API_BASE,
   timeout: 10000,
 });
 
+// Attach Authorization header if a token exists
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
   return config;
 });
 
+// Handle 401s from auth-protected endpoints
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user_email');
-      window.location.href = '/login';
+    const status = error?.response?.status;
+    const url = error?.config?.url || '';
+    if (
+      status === 401 &&
+      (url.startsWith('/users/me') || url.startsWith('/admin') || url.startsWith('/auth'))
+    ) {
+      try {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user_email');
+      } catch (_) {}
+      // Redirect to login
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
 );
 
-// Auth
-export const registerUser = async (userData) => api.post('/auth/register', userData);
-export const loginUser = async (email, password) => api.post('/auth/login', { email, password });
-export const forgotPassword = async (email) => api.post('/auth/forgot-password', { email });
-export const resetPassword = async (token, newPassword) =>
-  api.post('/auth/reset-password', { token, new_password: newPassword });
+/*
+  Auth endpoints
+  Ensure JSON body always matches FastAPI models to avoid 422.
+*/
+export const registerUser = async (data) => {
+  // data must be { name?, email, password }
+  return api.post('/auth/register', data);
+};
 
-// User
-export const getCurrentUser = async () => api.get('/users/me').then(r => r.data);
+export const loginUser = async (email, password) => {
+  // Always send JSON, not separate args; this fixes 422.
+  return api.post('/auth/login', { email, password });
+};
 
-// News
-export const getNews = async (query = 'technology') =>
-  api.get(`/news?query=${encodeURIComponent(query)}`).then(r => r.data);
+// Optional: OAuth2 form flow if you expose /auth/token with OAuth2PasswordRequestForm
+export const loginWithForm = async (email, password) => {
+  const form = new URLSearchParams();
+  form.append('username', email);
+  form.append('password', password);
+  return api.post('/auth/token', form, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+};
 
-export const getStoredNews = async () =>
-  api.get('/news_stored').then(r => r.data); // note: path changed
+export const getCurrentUser = async () => {
+  const res = await api.get('/users/me');
+  return res.data;
+};
 
-// Profile
-export const getProfile = async () => api.get('/profile');
-export const updateProfile = async (profileData) => api.put('/profile', profileData);
+/*
+  Admin endpoints (require Bearer token)
+*/
+export const getAdminUsers = async () => {
+  const res = await api.get('/admin/users');
+  return res.data;
+};
 
-export const testConnection = async () => api.get('/');
+export const getAdminStats = async () => {
+  const res = await api.get('/admin/dashboard');
+  return res.data;
+};
+
+export const deleteAdminUser = async (userId) => {
+  const res = await api.delete(`/admin/users/${userId}`);
+  return res.data;
+};
+
+// Forgot/Reset password flows
+
+// Start forgot-password flow (e.g., send reset link/OTP)
+export const forgotPassword = async (email) => {
+  // Backend expects { email }
+  return api.post('/auth/forgot-password', { email });
+};
+
+// Complete reset-password flow
+export const resetPassword = async ({ token, password }) => {
+  // If your backend uses a token in query instead of body, adapt accordingly:
+  // return api.post(`/auth/reset-password?token=${encodeURIComponent(token)}`, { password });
+  return api.post('/auth/reset-password', { token, password });
+};
+
+
+/*
+  Example content endpoints (keep as needed)
+*/
+export const getNews = async (query = 'technology') => {
+  const res = await api.get(`/news`, { params: { query } });
+  return res.data;
+};
+
+export const getRecentArticles = async () => {
+  const res = await api.get('/recent-articles');
+  return res.data;
+};
+
+export const detectTrends = async (range = '7d') => {
+  const res = await api.get('/detect-trends/topics', { params: { range } });
+  return res.data;
+};
+
+// Export axios instance for rare custom calls
 export default api;

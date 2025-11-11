@@ -1,126 +1,145 @@
-# auth.py
+# news_backend/auth.py
 import os
-import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import HTTPException, Depends, APIRouter, status
-from fastapi.security import OAuth2PasswordBearer
-from jose import jwt, JWTError
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from jose import jwt
 from passlib.context import CryptContext
-from sqlalchemy.orm import Session
+from pydantic import BaseModel, EmailStr
 
-from news_backend.database import get_db
-from news_backend.models import PasswordResetToken, User
+from news_backend.supabase_client import supabase
 
-# Config from environment (avoid hardcoding in prod)
-SECRET_KEY = os.getenv("JWT_SECRET", "dev-secret-change-me")
+from fastapi import Depends, HTTPException, status
+from news_backend.supabase_client import supabase
+
+
+router = APIRouter(prefix="/auth", tags=["Auth"])
+
+# Secrets / config
+SECRET_KEY = os.getenv("JWT_SECRET", "CHANGE_ME_SECRET")
 ALGORITHM = os.getenv("JWT_ALG", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_MINUTES", "60"))
-RESET_TOKEN_EXPIRE_MINUTES = int(os.getenv("RESET_TOKEN_EXPIRE_MINUTES", "15"))
+pwd_context = CryptContext(schemes=["bcrypt", "bcrypt_sha256"], deprecated="auto")
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
-
-# -------------------- Auth helpers --------------------
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
-
+# Helpers
 def create_access_token(*, sub: int, email: str, role: Optional[str] = "user") -> str:
     now = datetime.now(timezone.utc)
     payload = {
-        "sub": str(sub),          # always string in JWT
+        "sub": str(sub),
         "email": email,
-        "role": role,
+        "role": role or "user",
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)).timestamp()),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
+# Schemas
+class RegisterRequest(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+class CurrentUser(BaseModel):
+    id: int
+    email: str
+    role: str = "user"
+
+# Routes
+@router.post("/register")
+def register_user(req: RegisterRequest):
+    email = req.email.strip().lower()
+    existing = (supabase.table("users")
+                .select("id")
+                .ilike("email", email)
+                .limit(1).execute()).data
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    hashed = pwd_context.hash(req.password)
+    ins = supabase.table("users").insert({
+        "name": req.name or "",
+        "email": email,
+        "hashed_password": hashed,
+        "role": "user"
+    }).execute()
+    if getattr(ins, "error", None):
+        raise HTTPException(status_code=400, detail="Registration failed")
+    user = ins.data[0]
+    token = create_access_token(sub=user["id"], email=user["email"], role=user.get("role", "user"))
+    return {"message": "User registered successfully",
+            "user_id": user["id"],
+            "access_token": token,
+            "token_type": "bearer"}
+
+@router.post("/login")
+def login_user(req: LoginRequest):
+    email = req.email.strip().lower()
+    res = (supabase.table("users")
+           .select("*")
+           .ilike("email", email)
+           .limit(1).execute())
+    rows = res.data or []
+    if not rows:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    user = rows[0]
+    if not user.get("hashed_password") or not pwd_context.verify(req.password, user["hashed_password"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    token = create_access_token(sub=user["id"], email=user["email"], role=user.get("role", "user"))
+    return {"message": "Login successful",
+            "user_id": user["id"],
+            "access_token": token,
+            "token_type": "bearer"}
+
+# Security deps (use /auth/token so Swagger's OAuth2PasswordBearer works)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
+
 def decode_access_token(token: str) -> dict:
     return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
 
-# auth.py — temporary debugging
-from jose import JWTError
-from fastapi import HTTPException, status
-
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+def get_current_user(token: str = Depends(oauth2_scheme)) -> CurrentUser:
+    print("get_current_user token_len:", len(token) if token else 0)
     try:
         payload = decode_access_token(token)
-        sub = payload.get("sub")
-        email = payload.get("email")
-        if not sub or not email:
-            raise ValueError("missing claims")
-        user = db.query(User).filter(User.id == int(sub)).first()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        return user
-    except JWTError as e:
-        print("JWT error:", repr(e))  # TEMP: inspect reason
+        print("JWT sub/email:", payload.get("sub"), payload.get("email"))
+        return CurrentUser(
+            id=int(payload["sub"]),
+            email=payload["email"],
+            role=payload.get("role", "user"),
+        )
+    except Exception as e:
+        print("get_current_user decode error:", type(e).__name__, str(e))
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
 
-# -------------------- Password reset --------------------
-def create_password_reset_token(email: str, db: Session):
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        return None
-    token = secrets.token_urlsafe(32)
-    expires_at = datetime.utcnow() + timedelta(minutes=RESET_TOKEN_EXPIRE_MINUTES)
-    reset_record = PasswordResetToken(user_id=user.id, token=token, expires_at=expires_at)
-    db.add(reset_record)
-    db.commit()
-    db.refresh(reset_record)
-    return token
 
-def verify_password_reset_token(token: str, db: Session):
-    record = db.query(PasswordResetToken).filter_by(token=token).first()
-    if not record or record.expires_at < datetime.utcnow():
-        return None
-    return record.user_id
 
-def reset_user_password(user_id: int, new_password: str, db: Session):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        return False
-    user.hashed_password = hash_password(new_password)
-    db.query(PasswordResetToken).filter(PasswordResetToken.user_id == user_id).delete()
-    db.commit()
-    return True
-
-# -------------------- Routes --------------------
-router = APIRouter(prefix="/auth", tags=["Auth"])
-
-@router.post("/register")
-def register_user(request: dict, db: Session = Depends(get_db)):
-    email = request.get("email")
-    password = request.get("password")
-    if not email or not password:
-        raise HTTPException(status_code=400, detail="Email and password required")
-
-    if db.query(User).filter(User.email == email).first():
-        raise HTTPException(status_code=400, detail="Email already registered")
-
-    new_user = User(email=email, hashed_password=hash_password(password))
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return {"message": "User registered successfully", "user_id": new_user.id}
-
-@router.post("/login")
-def login_user(request: dict, db: Session = Depends(get_db)):
-    email = request.get("email")
-    password = request.get("password")
-    if not email or not password:
-        raise HTTPException(status_code=400, detail="Email and password required")
-
-    user = db.query(User).filter(User.email == email).first()
-    if not user or not verify_password(password, user.hashed_password):
+@router.post("/token")
+def login_token(form: OAuth2PasswordRequestForm = Depends()):
+    # Enables Swagger “Authorize” popup (username=email, password=password)
+    email = form.username.strip().lower()
+    res = (supabase.table("users").select("*").ilike("email", email).limit(1).execute())
+    rows = res.data or []
+    if not rows:
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    user = rows[0]
+    if not user.get("hashed_password") or not pwd_context.verify(form.password, user["hashed_password"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    token = create_access_token(sub=user["id"], email=user["email"], role=user.get("role", "user"))
+    return {"access_token": token, "token_type": "bearer"}
 
-    # Issue token with sub = user.id (matches get_current_user)
-    access_token = create_access_token(sub=user.id, email=user.email)
-    return {"access_token": access_token, "token_type": "bearer"}
+# news_backend/auth.py
+
+
+async def require_admin(current: CurrentUser = Depends(get_current_user)):
+    # DB check
+    res = (supabase.table("users").select("role").eq("id", current.id).limit(1).execute())
+    role = (res.data or [{}])[0].get("role", "user")
+    print("ADMIN CHECK user_id:", current.id, "db_role:", role)
+    if (role or "user").lower() != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current

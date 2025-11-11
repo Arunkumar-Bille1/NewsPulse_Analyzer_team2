@@ -51,3 +51,16 @@ class PasswordResetToken(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     token = Column(String, unique=True, nullable=False)
     expires_at = Column(DateTime, nullable=False)
+
+#.............................
+# news_backend/models.py
+
+class Topic(Base):
+    __tablename__ = "topics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    topic_name = Column(String(255), nullable=False)
+    keywords = Column(Text, nullable=True)               # ✅ Changed to Text
+    representative_docs = Column(Text, nullable=True)    # ✅ Changed to Text
+    size = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)

@@ -181,7 +181,7 @@ const TopicTrends = () => {
                   >
                     <Card>
                       <CardHeader>
-                        <CardTitle>🔥 Top Trending Topics</CardTitle>
+                        <CardTitle>🔥 Top Trending Topics  </CardTitle>
                       </CardHeader>
                       <CardContent>
                         <ResponsiveContainer width="100%" height={260}>
