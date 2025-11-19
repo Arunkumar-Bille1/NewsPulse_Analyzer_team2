@@ -405,7 +405,9 @@ def forgot_password(request: PasswordResetRequest, background_tasks: BackgroundT
 
     user = user_res.data[0]
     token = secrets.token_urlsafe(32)
-    expires_at = (datetime.utcnow() + timedelta(minutes=15)).isoformat()
+    expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=15)).isoformat()
+
+
 
     ins = (supabase.table("password_reset_tokens")
            .insert({"user_id": user["id"], "token": token, "expires_at": expires_at})
@@ -418,29 +420,37 @@ def forgot_password(request: PasswordResetRequest, background_tasks: BackgroundT
     return {"message": "If your email exists, a reset link has been sent."}
 
 
+from dateutil import parser
+import datetime
+
 @app.post("/auth/reset-password")
 def reset_password(request: PasswordResetConfirm):
+
     # 1) Lookup token
     tok_res = (supabase.table("password_reset_tokens")
                .select("*")
                .eq("token", request.token)
                .limit(1)
                .execute())
+
     tok = tok_res.data
     if not tok:
         raise HTTPException(status_code=400, detail="Invalid or expired token.")
 
     rec = tok[0]
 
-    # 2) Check expiry
-    try:
-        exp = rec["expires_at"].replace("Z", "")
-        if datetime.fromisoformat(exp) < datetime.utcnow():
-            # Delete expired token proactively
-            supabase.table("password_reset_tokens").delete().eq("id", rec["id"]).execute()
-            raise HTTPException(status_code=400, detail="Invalid or expired token.")
-    except Exception:
-        # If parsing fails, treat as invalid
+    # 2) Parse expiry safely
+    exp = parser.isoparse(rec["expires_at"])
+
+    # 👉 FIX: If Supabase stored naive datetime, make it UTC-aware
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=datetime.timezone.utc)
+
+    # Current UTC time (aware)
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    # Compare
+    if exp < now:
         supabase.table("password_reset_tokens").delete().eq("id", rec["id"]).execute()
         raise HTTPException(status_code=400, detail="Invalid or expired token.")
 
@@ -448,11 +458,11 @@ def reset_password(request: PasswordResetConfirm):
     hashed = pwd_context.hash(request.new_password)
     supabase.table("users").update({"hashed_password": hashed}).eq("id", rec["user_id"]).execute()
 
-    # 4) Invalidate token (one-time use)
+    # 4) Invalidate token
     supabase.table("password_reset_tokens").delete().eq("id", rec["id"]).execute()
 
-    # 5) (Optional) Force re-login by rotating JWTs on next request
     return {"message": "Password has been successfully reset."}
+
 
 
 
@@ -629,18 +639,6 @@ def reset_alias(req: PasswordResetConfirm):
 @app.get("/stored-news")
 def stored_news_alias():
     return get_stored_news()  # forwards to /news_stored
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # =========================================================
@@ -855,8 +853,6 @@ def extract_keywords(text: str = Query(..., min_length=3), top_n: int = 5):
     return {"keywords": [{"word": w, "score": float(s)} for (w, s) in kws]}
 
 
-
-
 # main.py (or a service module)
 from news_backend.supabase_client import fetch_articles_batch, update_article_keywords
 
@@ -951,169 +947,27 @@ def _compute_topic_trends(days: int):
         "sentiment_distribution": sentiment_distribution,
         "sentiment_over_time": sentiment_over_time,
     }
+from news_backend.compare_bookmark_routes import router as compare_router
 
-# Alias 1: Trending page expects { trending_keywords, topics }
-# @app.get("/detect-trends")
-# def detect_trends(range: str = Query("7d")):
-#     days = {"7d": 7, "30d": 30, "90d": 90}.get(range, 7)
-#     _, trending_keywords, topics = _compute_trends(days)
-#     return {"trending_keywords": trending_keywords, "topics": topics}
+app.include_router(compare_router)
+from news_backend.bookmark_routes import router as bookmark_router
 
-# Alias 2: TopicTrends page expects { top_topics, sentiment_distribution, sentiment_over_time }
+app.include_router(bookmark_router)
+from news_backend.detect_trends import router as detect_routes
+app.include_router(detect_routes)
 
-NEWS_API_KEY="fd6b4247f1054b2e8b2f3c1eed92ee45"
-from textblob import TextBlob
+from news_backend.news_routes import router as news_routes_router
+app.include_router(news_routes_router, prefix="/news", tags=["News"])
+
+from news_backend.news_routes import router as news_router
+from news_backend.detect_trends import router as detect_trends_router
+
+app.include_router(news_router)
+app.include_router(detect_trends_router)
+
+
+
 import datetime
-import requests
-import re
-from fastapi import Query, HTTPException
-
-@app.get("/detect-trends/topics")
-def detect_trends_topics(time_range: str = Query("7d", alias="range")):
-    """
-    Fetch and analyze real news for 7d, 30d, or 90d ranges.
-    Aggregates weekly for 90 days automatically.
-    """
-    range_map = {"7d": 7, "30d": 30, "90d": 90}
-    total_days = range_map.get(time_range, 7)
-    end_date = datetime.datetime.utcnow().date()
-    start_date = end_date - datetime.timedelta(days=total_days)
-    print(f"📰 Analyzing from {start_date} to {end_date} ({total_days} days)")
-
-    # --- Topic definitions ---
-    topic_categories = {
-        "Business": ["market", "stock", "finance", "trade", "economy", "company"],
-        "Politics": ["government", "policy", "election", "minister", "law", "politics"],
-        "Technology": ["ai", "tech", "software", "internet", "data", "robot", "innovation"],
-        "Sports": ["match", "football", "cricket", "tournament", "goal", "player", "team"],
-        "Entertainment": ["movie", "film", "music", "celebrity", "actor", "netflix", "show"],
-        "Science": ["space", "nasa", "discovery", "research", "scientist", "experiment"],
-        "Health": ["health", "vaccine", "virus", "doctor", "medical", "covid"],
-        "Education": ["school", "college", "student", "education", "teacher", "university"],
-    }
-
-    topic_counts = {t: 0 for t in topic_categories.keys()}
-    sentiment_counts = {"positive": 0, "neutral": 0, "negative": 0}
-    sentiment_by_date = {}
-
-    # --- Multi-fetch for 90-day support ---
-    def fetch_articles_window(from_d, to_d):
-        url = (
-            f"https://newsapi.org/v2/everything?"
-            f"q=politics OR sports OR technology OR business OR entertainment OR health&"
-            f"from={from_d}&to={to_d}&sortBy=publishedAt&language=en&pageSize=100&apiKey={NEWS_API_KEY}"
-        )
-        res = requests.get(url)
-        if res.status_code != 200:
-            print("⚠️ NewsAPI error:", res.text)
-            return []
-        data = res.json()
-        return data.get("articles", [])
-
-    all_articles = []
-    # Fetch in 30-day chunks for 90-day range
-    days_remaining = total_days
-    chunk_start = start_date
-    while days_remaining > 0:
-        chunk_days = min(30, days_remaining)
-        chunk_end = chunk_start + datetime.timedelta(days=chunk_days)
-        articles = fetch_articles_window(chunk_start.strftime("%Y-%m-%d"), chunk_end.strftime("%Y-%m-%d"))
-        all_articles.extend(articles)
-        chunk_start = chunk_end
-        days_remaining -= chunk_days
-
-    if not all_articles:
-        return {
-            "top_topics": [],
-            "sentiment_distribution": [],
-            "sentiment_over_time": [],
-            "message": f"No articles found between {start_date} and {end_date}"
-        }
-
-    # --- Analyze articles ---
-    for article in all_articles:
-        text = " ".join([
-            (article.get("title") or "").lower(),
-            (article.get("description") or "").lower(),
-            (article.get("content") or "").lower()
-        ])
-        text = re.sub(r"[^a-z\s]", "", text).strip()
-        if not text:
-            continue
-
-        # Detect topic
-        detected_topic = "General"
-        for topic, keywords in topic_categories.items():
-            if any(k in text for k in keywords):
-                detected_topic = topic
-                topic_counts[topic] += 1
-                break
-
-        # Sentiment
-        blob = TextBlob(text)
-        polarity = blob.sentiment.polarity
-        if polarity > 0.2:
-            sentiment = "positive"
-        elif polarity < -0.2:
-            sentiment = "negative"
-        else:
-            sentiment = "neutral"
-
-        sentiment_counts[sentiment] += 1
-
-        # Group by published date
-        pub_date = article.get("publishedAt", "")[:10]
-        if not pub_date:
-            pub_date = str(end_date)
-        if pub_date not in sentiment_by_date:
-            sentiment_by_date[pub_date] = {"positive": 0, "neutral": 0, "negative": 0}
-        sentiment_by_date[pub_date][sentiment] += 1
-
-    # --- Ensure all days are included ---
-    complete_trend = []
-    for i in range(total_days + 1):
-        d = (start_date + datetime.timedelta(days=i)).strftime("%Y-%m-%d")
-        vals = sentiment_by_date.get(d, {"positive": 0, "neutral": 0, "negative": 0})
-        complete_trend.append({"date": d, **vals})
-
-    # --- Smooth aggregation for 90 days (weekly buckets) ---
-    if total_days == 90:
-        weekly_trend = []
-        for w in range(0, len(complete_trend), 7):
-            week_chunk = complete_trend[w:w + 7]
-            if not week_chunk:
-                continue
-            avg = {"date": week_chunk[-1]["date"]}
-            for s in ["positive", "neutral", "negative"]:
-                avg[s] = sum(day[s] for day in week_chunk) / len(week_chunk)
-            weekly_trend.append(avg)
-        complete_trend = weekly_trend
-
-    # --- Sort topics ---
-    top_topics = [{"topic": k, "count": v} for k, v in topic_counts.items() if v > 0]
-    top_topics.sort(key=lambda x: x["count"], reverse=True)
-
-    sentiment_distribution = [
-        {"name": "Positive", "value": sentiment_counts["positive"]},
-        {"name": "Neutral", "value": sentiment_counts["neutral"]},
-        {"name": "Negative", "value": sentiment_counts["negative"]}
-    ]
-
-    return {
-        "time_range": time_range,
-        "from_date": start_date.strftime("%Y-%m-%d"),
-        "to_date": end_date.strftime("%Y-%m-%d"),
-        "top_topics": top_topics,
-        "sentiment_distribution": sentiment_distribution,
-        "sentiment_over_time": complete_trend,
-        "article_count": len(all_articles)
-    }
-
-from news_backend.admin_routes import router as admin_router
-app.include_router(admin_router)
-from news_backend.auth import router as auth_router
-app.include_router(auth_router)
-#...............................
 import requests
 NEWS_API_KEY="fd6b4247f1054b2e8b2f3c1eed92ee45"
 @app.get("/recent-articles")
@@ -1196,3 +1050,5 @@ def detect_trends():
         "trending_keywords": trending_keywords,
         "topics": detected_topics
     }
+from news_backend.bookmark_routes import router as bookmarks_router
+app.include_router(bookmarks_router, prefix="/bookmarks")

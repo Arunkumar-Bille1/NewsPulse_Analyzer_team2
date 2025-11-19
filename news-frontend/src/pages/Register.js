@@ -46,6 +46,12 @@ const handleRegister = async (e) => {
       setMessage('ERROR: Passwords do not match.');
       return;
     }
+    // Validate phone number (optional but must be exactly 10 digits)
+    if (phoneNumber && !/^\d{10}$/.test(phoneNumber)) {
+      setMessage("ERROR: Phone number must be exactly 10 digits.");
+      setLoading(false);
+      return;
+    }
 
     const payload = {
       name: name.trim(),

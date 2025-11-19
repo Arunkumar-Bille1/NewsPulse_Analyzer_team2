@@ -81,3 +81,17 @@ class UserProfileResponse(UserProfileBase):
 
     class Config:
         from_attributes = True
+
+
+        
+class BookmarkCreate(BaseModel):
+    user_id: str
+    article_id: str
+
+class CompareCreate(BaseModel):
+    user_id: str
+    article_id: str
+
+class CompareResponse(BaseModel):
+    user_id: str
+    article_ids: List[str]

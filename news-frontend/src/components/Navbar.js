@@ -1,6 +1,6 @@
 import React from "react";
-import { Link, useNavigate } from "react-router-dom";
-
+import { useNavigate, NavLink } from "react-router-dom";
+import { Bookmark, User } from "lucide-react"; 
 function Navbar() {
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
@@ -11,57 +11,75 @@ function Navbar() {
   };
 
   return (
-    <nav className="bg-indigo-600 text-white px-4 py-3 shadow flex items-center justify-between">
-      {/* Logo & Title */}
-      <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate("/")}>
+    <nav
+      className="
+        w-full bg-white border-b shadow-sm
+        fixed top-0 left-0 right-0 z-50
+        flex items-center justify-between
+        px-6 py-4
+      "
+    >
+      {/* LEFT — Logo */}
+      <div
+        className="flex items-center gap-3 cursor-pointer"
+        onClick={() => navigate("/")}
+      >
         <img
           src="/trendvista_logo.png"
           alt="TrendVista logo"
-          className="h-8 w-8 rounded-full bg-white"
+          className="h-[45px] w-[45px] rounded-full" 
         />
-        <span className="text-xl font-bold tracking-tight">TrendVista</span>
+        <span className="text-[30px] font-semibold text-indigo-600">
+          TrendVista
+        </span>
       </div>
 
-      {/* Navigation Links */}
-      <div className="flex items-center gap-6 text-base">
-        <Link to="/" className="hover:underline">
-          Home
-        </Link>
 
-        <Link to="/analyze" className="hover:underline px-4 py-2">
-          Raw Analysis
-        </Link>
+      {/* RIGHT — If user NOT logged in */}
+      {!token && (
+        <div className="flex items-center gap-6 text-gray-700">
+          <NavLink to="/login" className="text-sm font-medium hover:text-indigo-600">
+            Login
+          </NavLink>
 
-        {/* ✅ Add new links for Trending and Topic Trends */}
-        <Link to="/trending" className="hover:underline px-4 py-2">
-          Trending
-        </Link>
+          <NavLink
+            to="/register"
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700"
+          >
+            Register
+          </NavLink>
+        </div>
+      )}
 
-        <Link to="/topic-trends" className="hover:underline px-4 py-2">
-          Topic Trends
-        </Link>
+      {/* RIGHT — If user IS logged in */}
+      {token && (
+        <div className="flex items-center gap-6 text-gray-700">
 
-        {/* Auth-based display */}
-        {token ? (
-          <>
-            <Link to="/profile" className="hover:underline flex items-center gap-1">
-              👤 Profile
-            </Link>
-            <button onClick={handleLogout} className="hover:underline">
-              Logout
-            </button>
-          </>
-        ) : (
-          <>
-            <Link to="/login" className="hover:underline">
-              Login
-            </Link>
-            <Link to="/register" className="hover:underline">
-              Register
-            </Link>
-          </>
-        )}
-      </div>
+          {/* Saved */}
+          <button
+            className="text-gray-700 hover:text-indigo-600 transition cursor-pointer"
+            onClick={() => navigate("/savedNews")}
+          >
+            <Bookmark size={26} strokeWidth={2} />
+          </button>
+
+          {/* Profile Avatar */}
+          <div
+          className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center cursor-pointer hover:bg-indigo-700 transition"
+          onClick={() => navigate("/profile")}
+        >
+          <User size={22} className="text-white" strokeWidth={2.5} />
+        </div>
+
+          {/* Logout */}
+          <button
+            onClick={handleLogout}
+            className="text-sm text-red-600 hover:text-red-800"
+          >
+            Logout
+          </button>
+        </div>
+      )}
     </nav>
   );
 }

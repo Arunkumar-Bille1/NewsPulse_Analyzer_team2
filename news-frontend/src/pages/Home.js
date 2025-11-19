@@ -5,7 +5,7 @@ import NewsCard from "../components/NewsCard";
 // Voice Icon
 const VoiceIcon = ({ isListening }) => (
   <svg
-    className={`w-4 h-4 ${isListening ? 'animate-pulse text-red-500' : 'text-gray-500'}`}
+    className={`w-4 h-4 ${isListening ? "animate-pulse text-red-500" : "text-gray-500"}`}
     fill="none"
     stroke="currentColor"
     viewBox="0 0 24 24"
@@ -44,15 +44,15 @@ function Home() {
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef(null);
 
-  const fetchNews = async () => {
-    if (!query.trim()) return;
+  const fetchNews = async (q = query) => {
+    if (!q.trim()) return;
     setLoading(true);
     try {
-      const response = await axios.get(`http://127.0.0.1:8000/news?query=${query}`);
-      setNews(response.data.articles);
-      setProcessedQuery(response.data.processed_query || "");
-    } catch (error) {
-      console.error("Error fetching news", error);
+      const res = await axios.get(`http://127.0.0.1:8000/news?query=${encodeURIComponent(q)}`);
+      setNews(res.data.articles || []);
+      setProcessedQuery(res.data.processed_query || "");
+    } catch (e) {
+      console.error(e);
       setNews([]);
     } finally {
       setLoading(false);
@@ -60,218 +60,149 @@ function Home() {
   };
 
   useEffect(() => {
-    const fetchDefaultNews = async () => {
+    const load = async () => {
       setLoading(true);
       try {
-        const response = await axios.get(`http://127.0.0.1:8000/news?query=trending`);
-        setNews(response.data.articles);
-      } catch (error) {
-        console.error("Error fetching default news", error);
+        const res = await axios.get(`http://127.0.0.1:8000/news?query=trending`);
+        setNews(res.data.articles || []);
+      } catch {
         setNews([]);
       } finally {
         setLoading(false);
       }
     };
-    fetchDefaultNews();
+    load();
   }, []);
 
   const startListening = () => {
-    if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
-      alert("Speech recognition is not supported in this browser.");
+    if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
+      alert("Speech recognition not supported.");
       return;
     }
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    recognitionRef.current = new SpeechRecognition();
-    recognitionRef.current.lang = "en-US";
-    recognitionRef.current.interimResults = false;
-    recognitionRef.current.maxAlternatives = 1;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const rec = new SR();
+    recognitionRef.current = rec;
 
-    recognitionRef.current.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      setQuery(transcript);
-      setListening(false);
+    rec.lang = "en-US";
+    rec.interimResults = false;
+
+    rec.onresult = (e) => {
+      const text = e.results[0][0].transcript;
+      setQuery(text);
+      fetchNews(text);
     };
 
-    recognitionRef.current.onstart = () => setListening(true);
-    recognitionRef.current.onend = () => setListening(false);
-    recognitionRef.current.onerror = (event) => {
-      setListening(false);
-      alert("Speech recognition error: " + event.error);
-    };
+    rec.onstart = () => setListening(true);
+    rec.onend = () => setListening(false);
 
-    recognitionRef.current.start();
+    rec.start();
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter') {
-      fetchNews();
-    }
-  };
+  const trendingTopics = ["Technology", "Business", "Sports", "Health", "Politics", "Entertainment"];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Hero Section with lighter, smaller typography */}
+       <div className="animate-fadeIn">
+
+      {/* CENTERED HEADER */}
+      <div className="text-center mt-4">
+        <h1 className="text-4xl font-bold text-gray-800">
+          Discover What’s <span className="text-indigo-600">Trending</span>
+        </h1>
+        <p className="text-gray-600 mt-2">
+          Real-time news intelligence powered by AI.
+        </p>
+      </div>
+
+      {/* Search */}
       <div className="bg-white">
-        <div className="max-w-5xl mx-auto px-6 py-12">
-          <div className="max-w-3xl">
-            {/* SMALLER AND LESS BOLD HEADING */}
-            <h1 className="text-3xl md:text-4xl font-semibold text-gray-800 mb-3 leading-tight">
-              Discover What's <span className="text-indigo-600 font-medium">Trending</span>
-            </h1>
-            {/* SMALLER AND LIGHTER SUBTITLE */}
-            <p className="text-base text-gray-600 mb-8 leading-relaxed font-normal">
-              Real-time news intelligence powered by AI. Stay informed with the stories that matter.
-            </p>
-          </div>
-          
+        <div className="max-w-6xl mx-auto px-6 py-8">
           <div className="max-w-4xl">
-            <div className="relative">
-              <div className="flex items-center bg-white border-2 border-gray-200 rounded-2xl shadow-lg hover:border-indigo-300 focus-within:border-indigo-500 focus-within:shadow-xl transition-all duration-300">
-                <div className="flex-1 flex items-center min-w-0">
-                  <div className="pl-5 flex-shrink-0">
-                    <SearchIcon />
-                  </div>
-                  <input
-                    type="text"
-                    placeholder="Search breaking news, trending topics, or current events..."
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    onKeyPress={handleKeyPress}
-                    className="w-full px-4 py-4 text-sm font-normal placeholder-gray-400 border-none focus:outline-none bg-transparent"
-                  />
-                </div>
-                
-                <div className="flex items-center space-x-2 pr-3">
-                  <button
-                    onClick={startListening}
-                    disabled={listening}
-                    className={`p-3 rounded-xl transition-all duration-300 border ${
-                      listening 
-                        ? 'bg-red-50 border-red-200 text-red-600' 
-                        : 'bg-gray-50 border-gray-200 hover:bg-gray-100 text-gray-500'
-                    }`}
-                    title={listening ? 'Listening...' : 'Voice search'}
-                  >
-                    <VoiceIcon isListening={listening} />
-                  </button>
-                  
-                  <button
-                    onClick={fetchNews}
-                    disabled={!query.trim() || loading}
-                    className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white px-6 py-3 rounded-xl text-sm font-medium transition-all duration-300 shadow-lg hover:shadow-xl disabled:shadow-sm"
-                  >
-                    {loading ? 'Searching...' : 'Search'}
-                  </button>
-                </div>
+            <div className="flex items-center bg-white border-2 border-gray-200 rounded-2xl shadow-lg hover:border-indigo-300 transition">
+              <div className="pl-5">
+                <SearchIcon />
               </div>
+
+              <input
+                type="text"
+                placeholder="Search breaking news, trending topics, or current events..."
+                className="flex-1 px-4 py-4 outline-none bg-transparent"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+
+              <button
+                onClick={startListening}
+                className="p-3 bg-gray-50 border border-gray-200 rounded-xl"
+              >
+                <VoiceIcon isListening={listening} />
+              </button>
+
+              <button
+                onClick={() => fetchNews()}
+                className="ml-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl"
+              >
+                {loading ? "Searching..." : "Search"}
+              </button>
             </div>
-            
-            {/* SMALLER trending topics */}
-            <div className="mt-6">
-              <div className="flex items-center space-x-4 text-sm">
-                <span className="text-gray-600 font-normal">Trending:</span>
-                <div className="flex flex-wrap gap-2">
-                  {['Technology', 'Business', 'Sports', 'Health', 'Politics', 'Entertainment'].map((topic) => (
-                    <button
-                      key={topic}
-                      onClick={() => {
-                        setQuery(topic);
-                        setTimeout(() => fetchNews(), 100);
-                      }}
-                      className="px-3 py-1.5 bg-gray-100 hover:bg-indigo-50 hover:text-indigo-700 text-gray-700 rounded-lg text-sm font-normal transition-colors duration-200 border border-transparent hover:border-indigo-200"
-                    >
-                      {topic}
-                    </button>
-                  ))}
-                </div>
+
+            {/* Trending chips */}
+            <div className="mt-6 flex items-center gap-4 text-sm">
+              <span className="text-gray-600">Trending:</span>
+              <div className="flex gap-2 flex-wrap">
+                {trendingTopics.map((topic) => (
+                  <button
+                    key={topic}
+                    onClick={() => {
+                      setQuery(topic);
+                      fetchNews(topic);
+                    }}
+                    className="px-3 py-1.5 bg-gray-100 rounded-lg hover:bg-indigo-50 hover:text-indigo-600"
+                  >
+                    {topic}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Results section with lighter typography */}
-      <div className="bg-gray-50 py-8">
+      {/* Results */}
+      <div className="py-8">
         <div className="max-w-6xl mx-auto px-6">
+
           {loading && (
-            <div className="flex flex-col items-center justify-center py-16">
-              <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
-              <p className="text-gray-600 font-normal text-sm">Finding the latest stories for you...</p>
+            <div className="flex justify-center items-center py-16">
+              <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
             </div>
           )}
 
           {!loading && news.length > 0 && (
-            <div className="space-y-6">
-              {/* SMALLER AND LIGHTER results header */}
-              <div className="flex items-end justify-between">
+            <>
+              <div className="flex justify-between items-end mb-6">
                 <div>
-                  <h2 className="text-xl font-medium text-gray-800 mb-1">
-                    {query ? `Results for "${processedQuery}"` : 'Trending Stories'}
+                  <h2 className="text-xl font-medium text-gray-800">
+                    {query ? `Results for "${processedQuery || query}"` : "Trending Stories"}
                   </h2>
-                  <p className="text-gray-600 text-sm font-normal">
-                    {news.length} {news.length === 1 ? 'article' : 'articles'} found
-                  </p>
+                  <p className="text-sm text-gray-600">{news.length} articles found</p>
                 </div>
+
                 {query && (
-                  <button
-                    onClick={() => {
-                      setQuery('');
-                      setTimeout(() => fetchNews(), 100);
-                    }}
-                    className="text-sm text-indigo-600 hover:text-indigo-700 font-normal"
-                  >
+                  <button className="text-indigo-600" onClick={() => setQuery("")}>
                     Clear search
                   </button>
                 )}
               </div>
-              
-              {/* ENHANCED NEWS CARDS WITH HOVER EFFECTS */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {news.map((article, index) => (
-                  <div 
-                    key={index} 
-                    className="hover:shadow-lg hover:-translate-y-1 transition-all duration-300 cursor-pointer"
-                  >
-                    <NewsCard article={article} />
-                  </div>
+                  <NewsCard key={index} article={article} />
                 ))}
               </div>
-            </div>
-          )}
-
-          {!loading && news.length === 0 && query && (
-            <div className="text-center py-16">
-              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <h3 className="text-lg font-medium text-gray-800 mb-2">No articles found</h3>
-              <p className="text-gray-600 mb-6 max-w-md mx-auto text-sm font-normal">
-                We couldn't find any articles matching your search. Try different keywords or browse our trending topics.
-              </p>
-              <div className="space-x-4">
-                <button
-                  onClick={() => {
-                    setQuery('');
-                    setTimeout(() => fetchNews(), 100);
-                  }}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-lg text-sm font-medium transition-colors duration-200"
-                >
-                  Browse Trending
-                </button>
-                <button
-                  onClick={() => setQuery('')}
-                  className="text-indigo-600 hover:text-indigo-700 text-sm font-normal"
-                >
-                  Clear search
-                </button>
-              </div>
-            </div>
+            </>
           )}
         </div>
       </div>
-
       {/* LIGHTER footer */}
       <footer className="bg-white border-t border-gray-100">
         <div className="max-w-6xl mx-auto px-6 py-6">

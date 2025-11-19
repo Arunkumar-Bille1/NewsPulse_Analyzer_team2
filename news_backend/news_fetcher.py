@@ -16,7 +16,7 @@ load_dotenv(env_path)
 
 # Get API keys
 NEWS_API_KEY = os.getenv("NEWS_API_KEY","fd6b4247f1054b2e8b2f3c1eed92ee45")
-GNEWS_KEY = os.getenv("GNEWS_KEY","f74752ad4603941d97396533741a563d")
+GNEWS_KEY = os.getenv("GNEWS_KEY","2c36917d2300c1c6914eafe469e128e1")
 REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID","up9mA01v608o84gLtvMhYA")
 REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET","0z_wuVPMlo3o5_Si7IoxmRWOhF7iaA")
 

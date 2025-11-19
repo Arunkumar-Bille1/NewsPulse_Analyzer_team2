@@ -42,3 +42,43 @@ def delete_user(user_id: int, me: CurrentUser = Depends(require_admin)):
     supabase.table("user_profiles").delete().eq("user_id", user_id).execute()
     supabase.table("users").delete().eq("id", user_id).execute()
     return {"ok": True}
+
+# --------------------------------------------------------------------
+# EXTRA: Admin analytics / system status endpoints
+# --------------------------------------------------------------------
+from datetime import datetime
+import random
+
+@router.get("/system_status")
+def system_status(_: CurrentUser = Depends(require_admin)):
+    """Simulated system monitoring metrics."""
+    uptime = "98.5%"
+    avg_response_time = "1.2s"
+    daily_requests = 4200 + random.randint(-300, 300)
+    return {
+        "system_uptime": uptime,
+        "avg_response_time": avg_response_time,
+        "daily_requests": daily_requests,
+        "status": "Online",
+        "last_checked": datetime.utcnow().isoformat(),
+    }
+
+@router.get("/insights")
+def advanced_insights(_: CurrentUser = Depends(require_admin)):
+    """Advanced trend analysis metrics (placeholder until you connect real model)."""
+    trend_spike = "AI Regulation mentions increased by 245% in the last 24 hours"
+    correlations = {
+        "Technology→Economy": round(random.uniform(0.8, 0.9), 2),
+        "Environment→Policy": round(random.uniform(0.7, 0.8), 2),
+        "Health→Technology": round(random.uniform(0.6, 0.7), 2),
+    }
+    chart_series = [
+        {"day": d, "Technology": 100 + i * 10, "Environment": 90 + i * 8, "Economy": 95 + i * 6}
+        for i, d in enumerate(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
+    ]
+    return {
+        "trend_spike": trend_spike,
+        "correlations": correlations,
+        "chart_series": chart_series,
+        "last_update": datetime.utcnow().isoformat(),
+    }

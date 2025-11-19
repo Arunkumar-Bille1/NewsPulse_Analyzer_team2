@@ -134,3 +134,35 @@ def train_topic_model(docs):
     topics, probs = topic_model.fit_transform(docs)
     save_topics_to_db()
     return topics, probs
+
+
+
+from news_backend.database import SessionLocal
+from news_backend.models import NewsBase
+
+def detect_topics():
+    """
+    Fetches all articles, trains BERTopic model,
+    and returns summarized topics.
+    """
+    db = SessionLocal()
+    try:
+        # Fetch documents
+        articles = db.query(NewsBase).all()
+        docs = [
+            f"{a.title or ''} {a.description or ''}".strip()
+            for a in articles
+            if (a.title or a.description)
+        ]
+
+        if not docs:
+            return []
+
+        # Train BERTopic on document set
+        train_topic_model(docs)
+
+        # Return summaries for UI
+        return summarize_topics()
+
+    finally:
+        db.close()
