@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getBookmarks, removeBookmark } from "../api";
 
-const fallbackImg = "https://via.placeholder.com/600x400?text=No+Image";
+const fallbackImg = "https://placehold.co/600x400?text=No+Image";
 
 const DEFAULT_FOLDERS = [
   "Technology",
@@ -50,9 +50,7 @@ function autoCategorize(text = "") {
 function getLoggedInUser() {
   const email = localStorage.getItem("user_email");
   const token = localStorage.getItem("token");
-
-  if (token && email) return { email };
-  return null;
+  return token && email ? { email } : null;
 }
 
 export default function SavedNews() {
@@ -76,7 +74,7 @@ export default function SavedNews() {
   const [renameValue, setRenameValue] = useState("");
 
   // --------------------------------------------------
-  // LOAD BOOKMARKS FROM BACKEND
+  // LOAD SAVED BOOKMARKS
   // --------------------------------------------------
   useEffect(() => {
     const logged = getLoggedInUser();
@@ -89,21 +87,26 @@ export default function SavedNews() {
 
     const loadBookmarks = async () => {
       try {
-        console.log("📌 Fetching bookmarks for:", logged.email);
-
-        // ❗ NO ENCODING HERE
         const response = await getBookmarks(logged.email);
         const rows = response.data || [];
 
-        console.log("📌 Raw rows:", rows);
-
         const parsed = rows.map((row) => {
           const a = row.article || {};
+
+          const image =
+            a.image ||
+            a.image_url ||
+            a.urlToImage ||
+            a.thumbnail ||
+            a.img ||
+            a.picture ||
+            fallbackImg;
+
           return {
             title: a.title || "",
             description: a.description || "",
             url: row.article_url,
-            urlToImage: a.urlToImage || a.image_url || fallbackImg,
+            image,
             savedAt: new Date(row.created_at).getTime(),
             folder:
               a.folder ||
@@ -112,11 +115,10 @@ export default function SavedNews() {
           };
         });
 
-        // folders
-        const fset = new Set(DEFAULT_FOLDERS);
-        parsed.forEach((x) => fset.add(x.folder));
+        const folderSet = new Set(DEFAULT_FOLDERS);
+        parsed.forEach((item) => folderSet.add(item.folder));
 
-        setFolders([...fset]);
+        setFolders([...folderSet]);
         setBookmarks(parsed);
       } catch (err) {
         console.error("❌ Error loading bookmarks:", err);
@@ -141,11 +143,7 @@ export default function SavedNews() {
   const removeItem = (url) => {
     askConfirm("Remove this saved article?", async () => {
       try {
-        console.log("🗑 Removing:", user.email, url);
-
-        // ❗ send RAW email (not encoded)
         await removeBookmark(user.email, url);
-
         setBookmarks((prev) => prev.filter((b) => b.url !== url));
       } catch (err) {
         console.error("❌ Remove failed:", err);
@@ -206,7 +204,6 @@ export default function SavedNews() {
   // --------------------------------------------------
   const filtered = bookmarks.filter((b) => {
     if (filterFolder !== "All" && b.folder !== filterFolder) return false;
-
     const q = searchTxt.toLowerCase();
     return `${b.title} ${b.description}`.toLowerCase().includes(q);
   });
@@ -244,6 +241,7 @@ export default function SavedNews() {
         <img
           src="https://cdn-icons-png.flaticon.com/512/4076/4076508.png"
           className="w-40 mx-auto mt-6 opacity-70"
+          alt = " "
         />
       </div>
     );
@@ -281,7 +279,7 @@ export default function SavedNews() {
         </div>
       </div>
 
-      {/* ------------------ FOLDER MANAGER ------------------ */}
+      {/* FOLDER MANAGER */}
       <div className="bg-white p-4 shadow rounded mb-8">
 
         <h2 className="font-semibold text-lg mb-3">Manage Folders</h2>
@@ -309,7 +307,9 @@ export default function SavedNews() {
               className="bg-gray-100 px-3 py-1 rounded flex items-center gap-2"
             >
               <span
-                className={`cursor-pointer ${filterFolder === f ? "font-bold text-indigo-700" : ""}`}
+                className={`cursor-pointer ${
+                  filterFolder === f ? "font-bold text-indigo-700" : ""
+                }`}
                 onClick={() => setFilterFolder(f)}
               >
                 {f}
@@ -337,7 +337,7 @@ export default function SavedNews() {
           ))}
         </div>
 
-        {/* Rename UI */}
+        {/* Rename */}
         {renameTarget && (
           <div className="mt-3 flex gap-2">
             <input
@@ -363,7 +363,7 @@ export default function SavedNews() {
         )}
       </div>
 
-      {/* ------------------ ARTICLE LIST ------------------ */}
+      {/* ARTICLE LIST */}
       {Object.entries(grouped).map(([folder, items]) => (
         <div key={folder} className="bg-white p-5 shadow rounded mb-10">
 
@@ -374,11 +374,15 @@ export default function SavedNews() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {items.map((a) => (
-              <div key={a.url} className="border rounded shadow bg-white overflow-hidden">
-
+              <div
+                key={a.url}
+                className="border rounded shadow bg-white overflow-hidden"
+              >
                 <img
-                  src={a.urlToImage}
+                  src={a.image}
+                  onError={(e) => (e.target.src = fallbackImg)}
                   className="w-full h-40 object-cover"
+                  alt = " "
                 />
 
                 <div className="p-4">
@@ -411,18 +415,16 @@ export default function SavedNews() {
                     </button>
                   </div>
                 </div>
-
               </div>
             ))}
           </div>
         </div>
       ))}
 
-      {/* ------------------ CONFIRM MODAL ------------------ */}
+      {/* CONFIRM MODAL */}
       {confirm.show && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded shadow max-w-sm text-center">
-
             <p className="text-lg mb-6">{confirm.message}</p>
 
             <div className="flex justify-center gap-4">
@@ -443,7 +445,6 @@ export default function SavedNews() {
                 No
               </button>
             </div>
-
           </div>
         </div>
       )}

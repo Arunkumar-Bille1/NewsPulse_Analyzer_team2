@@ -21,6 +21,8 @@ import Trending from "./pages/Trending";
 import TopicTrends from "./pages/TopicTrends";
 import Compare from "./pages/compare";
 import SavedNews from "./pages/SavedNews";
+import GeoDashboard from "./pages/GeoDashboard";
+import GeoFilter from "./components/GeoFilter";
 
 function App() {
   return (
@@ -234,6 +236,21 @@ function App() {
                 <Navbar />
                 <div className="p-6 bg-gray-50 min-h-screen mt-20">
                   <Settings />
+                </div>
+              </div>
+            </div>
+          }
+        />
+        {/* ⭐ GEO DASHBOARD ROUTE */}
+        <Route
+          path="/GeoDashboard"
+          element={
+            <div className="flex">
+              <Sidebar />
+              <div className="flex-1 ml-64">
+                <Navbar />
+                <div className="p-6 bg-gray-50 min-h-screen mt-20">
+                  <GeoDashboard />
                 </div>
               </div>
             </div>

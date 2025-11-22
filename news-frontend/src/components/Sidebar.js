@@ -9,6 +9,7 @@ import textIcon from "../assets/icons/trendexplorer.jpeg";
 import compareIcon from "../assets/icons/compare.jpeg";
 import bookmarkIcon from "../assets/icons/bookmark.jpeg";
 import settingsIcon from "../assets/icons/settings.jpeg";
+import geoIcon from "../assets/icons/geo.jpeg";   // ⭐ ADD THIS
 
 export default function Sidebar() {
   const menu = [
@@ -16,6 +17,7 @@ export default function Sidebar() {
     { name: "Trending News", path: "/trending", icon: trendingIcon },
     { name: "Trend Explorer", path: "/topic-trends", icon: explorerIcon },
     { name: "Text Analysis", path: "/analyze", icon: textIcon },
+    { name: "Geo Dashboard", path: "/GeoDashboard", icon: geoIcon },   // ⭐ NEW
     { name: "Compare Articles", path: "/compare", icon: compareIcon },
     { name: "Bookmark", path: "/SavedNews", icon: bookmarkIcon },
     { name: "Settings", path: "/Settings", icon: settingsIcon },

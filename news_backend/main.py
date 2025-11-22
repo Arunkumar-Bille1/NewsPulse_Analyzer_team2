@@ -18,6 +18,7 @@ from collections import Counter
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import re
+from fastapi.middleware.cors import CORSMiddleware
 
 # 3. Third-party imports
 from fastapi import APIRouter, FastAPI, Depends, HTTPException, status, BackgroundTasks, Request, Query
@@ -1052,3 +1053,5 @@ def detect_trends():
     }
 from news_backend.bookmark_routes import router as bookmarks_router
 app.include_router(bookmarks_router, prefix="/bookmarks")
+from news_backend.geo import router as geo
+app.include_router(geo, prefix="/geo")

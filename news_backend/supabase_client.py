@@ -154,24 +154,76 @@ def update_article_keywords(rows: list[dict]):
             continue
         supabase.table("articles").update({"keywords": r["keywords"]}).eq("id", r["id"]).execute()
     print(f"[update_article_keywords] ✅ Updated keywords for {len(rows)} rows.")
+# GEO functions (replace existing geo section)
 
+def get_articles(country=None, state=None, city=None):
+    try:
+        query = supabase.table("articles").select("id, url, title, description, country, state, city, lat, lon, location")
+        if country:
+            query = query.eq("country", country)
+        if state:
+            query = query.eq("state", state)
+        if city:
+            query = query.eq("city", city)
+        resp = query.execute()
+        return resp.data or []
+    except Exception as e:
+        print("[get_articles] ❌ Error:", str(e))
+        return []
 
-# ==============================================================
-# 🧪  LOCAL TEST
-# ==============================================================
+def save_geo_tag(article_url: str, country: str, state: str = "", city: str = "", lat: float = None, lon: float = None, location: str = None):
+    try:
+        update_data = {
+            "country": country,
+            "state": state,
+            "city": city,
+            "lat": lat,
+            "lon": lon,
+            "location": location,
+        }
+        clean = {k: v for k, v in update_data.items() if v is not None}
+        resp = supabase.table("articles").update(clean).eq("url", article_url).execute()
+        if getattr(resp, "error", None):
+            raise Exception(resp.error)
+        return resp.data or []
+    except Exception as e:
+        print("[save_geo_tag] ❌ Error:", str(e))
+        raise
 
-if __name__ == "__main__":
-    print("\n[TEST] Running Supabase client test...")
+def get_geo_analytics():
+    try:
+        resp = supabase.rpc("get_geo_summary").execute()
+        if not getattr(resp, "error", None):
+            return resp.data
+        rows = (
+            supabase.table("articles")
+            .select("country, lat, lon")
+            .not_.is_("lat", None)
+            .not_.is_("lon", None)
+            .execute()
+        ).data or []
+        grouped = {}
+        for r in rows:
+            c = r.get("country") or "Unknown"
+            if c not in grouped:
+                grouped[c] = {"count": 0, "locations": []}
+            grouped[c]["count"] += 1
+            grouped[c]["locations"].append({"lat": r["lat"], "lon": r["lon"]})
+        return grouped
+    except Exception as e:
+        print("[get_geo_analytics] ❌ Error:", str(e))
+        return {}
 
-    test_articles = [{
-        "title": "AI transforming news analytics",
-        "description": "Testing upsert pipeline",
-        "content": "This is a test content item for TrendVista",
-        "source": {"name": "TrendVista"},
-        "publishedAt": "2025-11-08T10:00:00Z",
-        "url": "https://example.com/test-article-001",
-        "image": "https://example.com/test-image.jpg",
-        "keywords": ["AI", "news", "test"]
-    }]
-
-    save_news_to_supabase(test_articles)
+def fetch_articles_batch(offset: int = 0, limit: int = 200):
+    try:
+        resp = (
+            supabase.table("articles")
+            .select("id, url, title, description, content, country, state, city, lat, lon")
+            .order("id", desc=True)
+            .range(offset, offset + limit - 1)
+            .execute()
+        )
+        return resp.data or []
+    except Exception as e:
+        print("[fetch_articles_batch] ❌ Error:", str(e))
+        return []

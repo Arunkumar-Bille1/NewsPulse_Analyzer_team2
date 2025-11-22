@@ -4,44 +4,46 @@ const API_BASE = process.env.REACT_APP_API_BASE || "http://127.0.0.1:8000";
 
 const api = axios.create({
   baseURL: API_BASE,
-  timeout: 60000,
+  timeout: 20000,
 });
-// AUTH HEADERS
+
+// ------------------------------------------------------
+// ⭐ INTERCEPTORS
+// ------------------------------------------------------
 api.interceptors.request.use((config) => {
-  try {
-    const token = localStorage.getItem("token");
-    if (token) config.headers.Authorization = `Bearer ${token}`;
-  } catch {}
+  const token = localStorage.getItem("token");
+  if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
 api.interceptors.response.use(
   (res) => res,
   (error) => {
-    const status = error?.response?.status;
-    const url = error?.config?.url || "";
+    const status = error?.response?.status || 0;
 
-    if (
-      status === 401 &&
-      (url.startsWith("/users/me") ||
-        url.startsWith("/admin") ||
-        url.startsWith("/auth"))
-    ) {
+    // Auto logout if unauthorized
+    if (status === 401) {
       localStorage.removeItem("token");
       localStorage.removeItem("user_email");
-      if (window) window.location.href = "/login";
+      window.location.href = "/login";
     }
+
     return Promise.reject(error);
   }
 );
 
+export default api;
+
 // ------------------------------------------------------
-// ⛳ AUTH
+// 🔐 AUTH
 // ------------------------------------------------------
 export const registerUser = (data) => api.post("/auth/register", data);
+
 export const loginUser = (email, password) =>
   api.post("/auth/login", { email, password });
-export const getCurrentUser = async () => (await api.get("/users/me")).data;
+
+export const getCurrentUser = async () =>
+  (await api.get("/users/me")).data;
 
 export const forgotPassword = (email) =>
   api.post("/auth/forgot-password", { email });
@@ -49,14 +51,15 @@ export const forgotPassword = (email) =>
 export const resetPassword = (token, password) =>
   api.post("/auth/reset-password", {
     token,
-    new_password: password   // MUST MATCH FastAPI
+    new_password: password,
   });
-
 
 // ------------------------------------------------------
 // 🧩 ADMIN
 // ------------------------------------------------------
-export const getAdminUsers = async () => (await api.get("/admin/users")).data;
+export const getAdminUsers = async () =>
+  (await api.get("/admin/users")).data;
+
 export const getAdminStats = async () =>
   (await api.get("/admin/dashboard")).data;
 
@@ -66,44 +69,32 @@ export const deleteAdminUser = async (id) =>
 export const getSystemStatus = async () =>
   (await api.get("/admin/system_status")).data;
 
-export const getInsights = async () => (await api.get("/admin/insights")).data;
+export const getInsights = async () =>
+  (await api.get("/admin/insights")).data;
 
 // ------------------------------------------------------
-// 📰 NEWS / TREND EXPLORER (UI-2)
+// 📰 NEWS
 // ------------------------------------------------------
+export const searchArticles = async (query) =>
+  (await api.get("/news", { params: { query } })).data;
 
-// 🔍 Search news
-export const searchArticles = async (query) => {
-  const res = await api.get("/news", { params: { query } });
-  return res.data; // { articles, processed_query }
-};
+export const getTrendingArticles = async () =>
+  (await api.get("/news", { params: { query: "trending" } })).data;
 
-// ⭐ Default trending
-export const getTrendingArticles = async () => {
-  const res = await api.get("/news", { params: { query: "trending" } });
-  return res.data;
-};
+export const getCategoryArticles = async (category) =>
+  (await api.get("/news", { params: { query: category } })).data;
 
-// 🎯 Category-based news (Technology, Business...)
-export const getCategoryArticles = async (category) => {
-  const res = await api.get("/news", { params: { query: category } });
-  return res.data;
-};
+export const getArticleDetails = async (url) =>
+  (await api.get("/article/details", { params: { url } })).data;
 
-// 📄 Single article analysis (if backend supports)
-export const getArticleDetails = async (url) => {
-  const res = await api.get("/article/details", { params: { url } });
-  return res.data;
-};
-
-
-// 🔥 Trend Detection (already existing)
-export const detectTrends = async (range = "7d") => {
-  return (await api.get("/detect-trends/topics", { params: { range } })).data;
-};
-export default api;
 // ------------------------------------------------------
-// ⭐ BOOKMARK API (FINAL CORRECT VERSION)
+// 🔥 TREND DETECTION
+// ------------------------------------------------------
+export const detectTrends = async (range = "7d") =>
+  (await api.get("/detect-trends/topics", { params: { range } })).data;
+
+// ------------------------------------------------------
+// ⭐ BOOKMARK API – FINAL FIXED VERSION
 // ------------------------------------------------------
 
 // Add bookmark
@@ -113,21 +104,20 @@ export const addBookmark = (user_id, article) =>
 // Remove bookmark
 export const removeBookmark = (user_id, article_url) =>
   api.delete("/bookmarks/remove", {
-    data: { user_id, article_url }
+    data: { user_id, article_url },
   });
 
-// Get all bookmarks (DO NOT ENCODE HERE)
+// Get all bookmarks
 export const getBookmarks = (user_id) =>
   api.get(`/bookmarks/${user_id}`);
 
-// Check if already bookmarked
+// Check bookmark (NO LOOP ⚠️)
 export const checkBookmark = (user_id, article_url) =>
   api.post("/bookmarks/check", { user_id, article_url });
 
 // ------------------------------------------------------
 // 🔍 COMPARE ARTICLES
 // ------------------------------------------------------
-
 export const addToCompare = async (user_id, article_id) =>
   (await api.post("/compare/add", { user_id, article_id })).data;
 
@@ -136,3 +126,18 @@ export const getCompareList = async (user_id) =>
 
 export const clearCompare = async (user_id) =>
   (await api.delete(`/compare/clear/${user_id}`)).data;
+
+// ------------------------------------------------------
+// 🌍 GEO APIs
+// ------------------------------------------------------
+export const getNewsByGeo = async (country, state = "", city = "") =>
+  (await api.get("/geo/news", { params: { country, state, city } })).data;
+
+export const getGeoHeatmap = async () =>
+  (await api.get("/geo/heatmap")).data;
+
+export const saveGeoTag = async (article_url, country, state, city) =>
+  (await api.post("/geo/tag", { article_url, country, state, city })).data;
+
+export const getGeoAnalytics = async () =>
+  (await api.get("/geo/analytics")).data;
