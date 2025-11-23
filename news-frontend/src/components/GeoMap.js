@@ -32,122 +32,120 @@ function GeoMap({ articles, heatmap = true }) {
   const markerLayerRef = useRef(null);
 
   useEffect(() => {
-    if (!mapContainer.current) return;
+  if (!mapContainer.current) return;
 
-    // ---------------------------
-    // Initialize the map ONCE
-    // ---------------------------
-    if (!mapInstance.current) {
-      mapInstance.current = L.map(mapContainer.current, {
-        center: [20, 0],
-        zoom: 2,
-        worldCopyJump: true,
-      });
-
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "© OpenStreetMap contributors",
-        maxZoom: 19,
-      }).addTo(mapInstance.current);
-
-      // Force proper size after first render
-      setTimeout(() => mapInstance.current.invalidateSize(), 300);
-    }
-
-    const map = mapInstance.current;
-
-    // ---------------------------
-    // Clear old layers safely
-    // ---------------------------
-    if (markerLayerRef.current) map.removeLayer(markerLayerRef.current);
-    if (heatLayerRef.current) map.removeLayer(heatLayerRef.current);
-
-    // ---------------------------
-    // Filter valid points
-    // ---------------------------
-    const valid = articles.filter(
-      (a) =>
-        a.lat &&
-        a.lon &&
-        !isNaN(parseFloat(a.lat)) &&
-        !isNaN(parseFloat(a.lon))
-    );
-
-    if (valid.length === 0) return;
-
-    // ---------------------------
-    // Marker Layer
-    // ---------------------------
-    const markerGroup = L.layerGroup();
-    const bounds = L.latLngBounds();
-
-    valid.forEach((article) => {
-      const lat = parseFloat(article.lat);
-      const lon = parseFloat(article.lon);
-
-      if (isNaN(lat) || isNaN(lon)) return;
-
-      const marker = L.marker([lat, lon]).bindPopup(`
-        <div style="max-width: 250px;">
-          <h4 style="margin-bottom: 6px; font-size: 14px;">${article.title || "Article"}</h4>
-
-          <p style="margin: 0 0 6px; font-size: 12px; color: #666;">
-            ${
-              article.description
-                ? article.description.substring(0, 100) + "..."
-                : "No description"
-            }
-          </p>
-
-          <p style="margin: 0; font-size: 12px; font-weight: bold;">
-            📍 ${article.location || "Unknown Location"}
-          </p>
-        </div>
-      `);
-
-      marker.addTo(markerGroup);
-      bounds.extend([lat, lon]);
+  if (!mapInstance.current) {
+    mapInstance.current = L.map(mapContainer.current, {
+      center: [20, 0],
+      zoom: 2,
+      worldCopyJump: true,
     });
 
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap contributors",
+      maxZoom: 19,
+    }).addTo(mapInstance.current);
+
+    setTimeout(() => mapInstance.current.invalidateSize(), 300);
+  }
+
+  const map = mapInstance.current;
+
+  // clear old layers
+  if (markerLayerRef.current) map.removeLayer(markerLayerRef.current);
+  if (heatLayerRef.current) map.removeLayer(heatLayerRef.current);
+
+  // filter valid points
+  const valid = (articles || []).filter(
+    (a) =>
+      a.lat &&
+      a.lon &&
+      !isNaN(parseFloat(a.lat)) &&
+      !isNaN(parseFloat(a.lon))
+  );
+
+  if (valid.length === 0) return;
+
+  // ---------------------------
+  // Marker Layer (only if heatmap is OFF)
+  // ---------------------------
+  const markerGroup = L.layerGroup();
+  const bounds = L.latLngBounds();
+
+  valid.forEach((article) => {
+    const lat = parseFloat(article.lat);
+    const lon = parseFloat(article.lon);
+
+    if (isNaN(lat) || isNaN(lon)) return;
+
+    const marker = L.marker([lat, lon]).bindPopup(`
+      <div style="max-width: 250px;">
+        <h4 style="margin-bottom: 6px; font-size: 14px;">${article.title || "Article"}</h4>
+
+        <p style="margin: 0 0 6px; font-size: 12px; color: #666;">
+          ${
+            article.description
+              ? article.description.substring(0, 100) + "..."
+              : "No description"
+          }
+        </p>
+
+        <p style="margin: 0; font-size: 12px; font-weight: bold;">
+          📍 ${article.location || "Unknown Location"}
+        </p>
+      </div>
+    `);
+
+    marker.addTo(markerGroup);
+    bounds.extend([lat, lon]);
+  });
+
+  // only add markers layer when heatmap is OFF
+  if (!heatmap) {
     markerGroup.addTo(map);
     markerLayerRef.current = markerGroup;
+  }
 
-    // ---------------------------
-    // HEATMAP (with safe delay)
-    // ---------------------------
-    if (heatmap) {
-      setTimeout(() => {
-        const size = map.getSize();
-        if (size.x === 0 || size.y === 0) {
-          map.invalidateSize();
-          return;
-        }
-
-        const heatPoints = valid.map((a) => [
-          parseFloat(a.lat),
-          parseFloat(a.lon),
-          0.6,
-        ]);
-
-        heatLayerRef.current = L.heatLayer(heatPoints, {
-          radius: 22,
-          blur: 25,
-          maxZoom: 11,
-        });
-
-        heatLayerRef.current.addTo(map);
-      }, 350);
+  // ---------------------------
+  // HEATMAP (only if heatmap is ON)
+  // ---------------------------
+  if (heatmap) {
+  setTimeout(() => {
+    const size = map.getSize();
+    if (size.x === 0 || size.y === 0) {
+      map.invalidateSize();
+      return;
     }
 
-    // ---------------------------
-    // Fit map to markers
-    // ---------------------------
-    if (bounds.isValid()) {
-      setTimeout(() => {
-        map.fitBounds(bounds, { padding: [40, 40] });
-        map.invalidateSize();
-      }, 300);
-    }
-  }, [articles, heatmap]);
+    const heatPoints = valid.map((a) => [
+      parseFloat(a.lat),
+      parseFloat(a.lon),
+      2.0,        // much higher weight so it is visible when zoomed out
+    ]);
+
+    heatLayerRef.current = L.heatLayer(heatPoints, {
+      radius: 30, // big radius so points bleed together at country/continent level
+      blur: 20,   // keep some softness but not too washed out
+      maxZoom: 8, // keep heat visible at low zooms
+      max: 2.0,   // matches the weight above
+    });
+
+    heatLayerRef.current.addTo(map);
+  }, 350);
+}
+
+
+  // ---------------------------
+  // Fit map to markers/heat
+  // ---------------------------
+  if (bounds.isValid()) {
+    setTimeout(() => {
+      map.fitBounds(bounds, { padding: [40, 40] });
+      map.invalidateSize();
+    }, 300);
+  }
+}, [articles, heatmap]);
+
 
   return (
     <div

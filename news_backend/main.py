@@ -46,6 +46,9 @@ from news_backend.supabase_client import (
     fetch_articles_batch,
     update_article_keywords
 )
+
+from news_backend.geo_tagger import tag_article_with_location  # add this import at top
+from news_backend.supabase_client import save_news_to_supabase
 from news_backend.database import Base, engine, get_db
 from news_backend.models import User, PasswordResetToken
 from news_backend.admin_routes import router as admin_router
@@ -653,17 +656,32 @@ def clean_keywords(name_field: str):
         tokens = [t.strip() for t in tokens[0].split('_')]
     return [t for t in tokens if t]
 
+from news_backend.geo_tagger import tag_article_with_location
+
 @app.get("/news")
 def get_news(query: str = "technology"):
     processed_query = preprocess_query(query)
     articles = get_combined_news(processed_query)
 
-    # Persist articles in Supabase (upsert by url)
-    save_news_to_supabase(articles)
+    # 1) Geo-tag each article before saving
+    geo_tagged_articles = []
+    for a in articles:
+        if not isinstance(a, dict):
+            continue
+        try:
+            tagged = tag_article_with_location(a)
+            geo_tagged_articles.append(tagged)
+        except Exception as e:
+            print("[get_news] geo_tag failed:", e)
+            geo_tagged_articles.append(a)
 
+    # 2) Persist geo-tagged articles in Supabase
+    save_news_to_supabase(geo_tagged_articles)
+
+    # 3) Topic modeling uses geo_tagged_articles (not original list)
     docs = [
         str(a.get("content") or a.get("description") or a.get("title", ""))
-        for a in articles
+        for a in geo_tagged_articles
         if isinstance(a, dict) and (a.get("title") or a.get("content"))
     ]
     if not docs:
@@ -673,7 +691,7 @@ def get_news(query: str = "technology"):
     topic_info_df = get_topic_info()
     topic_map = {str(row["Topic"]): clean_keywords(row["Name"]) for _, row in topic_info_df.iterrows()}
 
-    for idx, article in enumerate(articles):
+    for idx, article in enumerate(geo_tagged_articles):
         topic_id = str(topics[idx])
         keywords = topic_map.get(topic_id, [])
         article["topic_id"] = int(topic_id) if topic_id != "-1" else None
@@ -681,9 +699,12 @@ def get_news(query: str = "technology"):
         article["keywords"] = keywords
         article["topic_confidence"] = float(probs[idx]) if probs is not None and len(probs) > idx else None
 
-    return {"original_query": query, "processed_query": processed_query, "articles": articles}
+    return {
+        "original_query": query,
+        "processed_query": processed_query,
+        "articles": geo_tagged_articles,
+    }
 
-from typing import Optional
 
 @app.get("/news_stored")
 def get_stored_news(page: int = 0, page_size: int = 100):

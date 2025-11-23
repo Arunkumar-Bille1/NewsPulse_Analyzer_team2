@@ -1,14 +1,17 @@
-from bertopic import BERTopic
 from typing import List, Tuple, Any
-from sklearn.feature_extraction.text import CountVectorizer
-from sqlalchemy.orm import Session
-from news_backend.database import SessionLocal
-from news_backend.models import Topic
-import json
 from datetime import datetime
+import json
 
-# Keep a global BERTopic model
-topic_model = None
+from bertopic import BERTopic
+from sklearn.feature_extraction.text import CountVectorizer
+from sentence_transformers import SentenceTransformer
+from sqlalchemy.orm import Session
+
+from news_backend.database import SessionLocal
+from news_backend.models import Topic, NewsBase
+
+# Global BERTopic model
+topic_model: BERTopic | None = None
 
 
 def train_topic_model(docs: List[str]) -> Tuple[List[int], List[float]]:
@@ -16,36 +19,40 @@ def train_topic_model(docs: List[str]) -> Tuple[List[int], List[float]]:
     Train BERTopic on provided documents and save results to DB.
     """
     global topic_model
+
+    if not docs:
+        return [], []
+
     vectorizer_model = CountVectorizer(ngram_range=(1, 2), stop_words="english")
-    topic_model = BERTopic(vectorizer_model=vectorizer_model, language="english")
+    embedding_model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
+
+    topic_model = BERTopic(
+        embedding_model=embedding_model,
+        vectorizer_model=vectorizer_model,
+        language="english",
+    )
 
     topics, probs = topic_model.fit_transform(docs)
-    save_topics_to_db()  # ✅ Save trained topics to DB
+
+    # Safely persist topics
+    save_topics_to_db()
+
     return topics, probs
 
 
 def get_topic_info() -> Any:
-    """
-    Returns topic summary (DataFrame) from the trained model.
-    """
     if topic_model is None:
         raise ValueError("Model has not been trained yet.")
     return topic_model.get_topic_info()
 
 
 def get_docs_for_topic(topic_id: int) -> Any:
-    """
-    Returns representative documents for a specific topic.
-    """
     if topic_model is None:
         raise ValueError("Model has not been trained yet.")
     return topic_model.get_representative_docs().get(topic_id, [])
 
 
 def summarize_topics() -> list:
-    """
-    Generates a concise list of topics with their keywords.
-    """
     if topic_model is None:
         raise ValueError("Model has not been trained yet.")
 
@@ -60,21 +67,27 @@ def summarize_topics() -> list:
     return summaries
 
 
-def save_topics_to_db():
+def save_topics_to_db() -> None:
     """
     Save BERTopic results into the 'topics' table safely.
     Converts lists/dicts into strings or JSON before insertion.
     """
     global topic_model
-    if topic_model is None:
-        raise ValueError("Model has not been trained yet.")
 
-    topic_info = topic_model.get_topic_info()
-    representative_docs = topic_model.get_representative_docs()
+    # If training failed or model not fitted, just skip
+    if topic_model is None:
+        return
+
+    try:
+        topic_info = topic_model.get_topic_info()
+        representative_docs = topic_model.get_representative_docs()
+    except Exception:
+        # Model not fitted yet or other internal error; do not crash the API
+        return
 
     db: Session = SessionLocal()
     try:
-        # Optional: clear old topics before inserting new ones
+        # Optional: clear old topics
         db.query(Topic).delete()
 
         for _, row in topic_info.iterrows():
@@ -82,10 +95,9 @@ def save_topics_to_db():
             if topic_id == -1:  # skip outliers
                 continue
 
-            # ✅ Safely handle keyword and document data
             keywords = row.get("Representation")
             if isinstance(keywords, list):
-                keywords = ", ".join([str(k) for k in keywords])
+                keywords = ", ".join(str(k) for k in keywords)
             else:
                 keywords = str(keywords)
 
@@ -100,7 +112,7 @@ def save_topics_to_db():
                 keywords=keywords,
                 representative_docs=docs_json,
                 size=int(row["Count"]),
-                created_at=datetime.utcnow()
+                created_at=datetime.utcnow(),
             )
             db.add(topic)
 
@@ -109,45 +121,18 @@ def save_topics_to_db():
     except Exception as e:
         db.rollback()
         print(f"⚠️ Error saving topics: {e}")
-        raise
+        # do not re-raise here; we don't want /news to 500 because of topics
     finally:
         db.close()
 
 
-from bertopic import BERTopic
-from sklearn.feature_extraction.text import CountVectorizer
-from sentence_transformers import SentenceTransformer
-
-def train_topic_model(docs):
-    global topic_model
-    vectorizer_model = CountVectorizer(ngram_range=(1, 2), stop_words="english")
-
-    # ✅ Explicitly use CPU-safe embedding model
-    embedding_model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
-
-    topic_model = BERTopic(
-        embedding_model=embedding_model,
-        vectorizer_model=vectorizer_model,
-        language="english"
-    )
-
-    topics, probs = topic_model.fit_transform(docs)
-    save_topics_to_db()
-    return topics, probs
-
-
-
-from news_backend.database import SessionLocal
-from news_backend.models import NewsBase
-
-def detect_topics():
+def detect_topics() -> list:
     """
     Fetches all articles, trains BERTopic model,
     and returns summarized topics.
     """
     db = SessionLocal()
     try:
-        # Fetch documents
         articles = db.query(NewsBase).all()
         docs = [
             f"{a.title or ''} {a.description or ''}".strip()
@@ -158,11 +143,7 @@ def detect_topics():
         if not docs:
             return []
 
-        # Train BERTopic on document set
         train_topic_model(docs)
-
-        # Return summaries for UI
         return summarize_topics()
-
     finally:
         db.close()

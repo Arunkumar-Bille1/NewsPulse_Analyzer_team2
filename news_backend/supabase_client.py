@@ -118,6 +118,13 @@ def save_news_to_supabase(articles):
             "url": (a.get("url") or "").strip(),
             "image": a.get("image") or a.get("urlToImage") or "",
             "keywords": a.get("keywords") if a.get("keywords") is not None else [],
+            # NEW: geo fields from tag_article_with_location
+            "location": a.get("location"),
+            "lat": a.get("lat"),
+            "lon": a.get("lon"),
+            "country": a.get("country"),
+            "state": a.get("state"),
+            "city": a.get("city"),
         }
 
         # ✅ Only include rows that have a valid URL (required for on_conflict)
@@ -141,6 +148,7 @@ def save_news_to_supabase(articles):
         print("[save_news_to_supabase] ❌ Exception during upsert:", str(e))
         print("🧾 Payload sample:", json.dumps(rows[:2], indent=2))
         raise
+
 
 
 def update_article_keywords(rows: list[dict]):
