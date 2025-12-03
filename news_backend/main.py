@@ -1,8 +1,3 @@
-
-# =========================================================
-# TrendPulse AI Backend - main.py (Supabase-first)
-# =========================================================
-
 # 1. Load environment FIRST
 import nltk
 from dotenv import load_dotenv
@@ -46,9 +41,6 @@ from news_backend.supabase_client import (
     fetch_articles_batch,
     update_article_keywords
 )
-
-from news_backend.geo_tagger import tag_article_with_location  # add this import at top
-from news_backend.supabase_client import save_news_to_supabase
 from news_backend.database import Base, engine, get_db
 from news_backend.models import User, PasswordResetToken
 from news_backend.admin_routes import router as admin_router
@@ -87,8 +79,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(admin_router)
-# admin_router = APIRouter()
-# app.include_router(admin_router, prefix="/api/admin")
 # =========================================================
 # Security / JWT - SINGLE SOURCE OF TRUTH
 # =========================================================
@@ -147,10 +137,6 @@ async def require_admin(current: CurrentUser = Depends(get_current_user)):
     if current.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     return current
-
-# ... rest of your code (Google OAuth, schemas, routes, etc.)
-
-
 def articles_count():
     r = supabase.table("articles").select("*", count="exact", head=True).execute()
     return r.count
@@ -200,8 +186,6 @@ class Article(BaseModel):
 app.include_router(detect_trends_router, prefix="/trends", tags=["Trends"])
 app.include_router(topic_routes_router, prefix="/topics", tags=["Topics"])
 app.include_router(news_routes_router, prefix="/news", tags=["News"])  # optional if it’s Supabase-ready
-
-
 # =========================================================
 # Root / Health
 # =========================================================
@@ -467,13 +451,6 @@ def reset_password(request: PasswordResetConfirm):
 
     return {"message": "Password has been successfully reset."}
 
-
-
-
-
-
-
-
 class CurrentUser(BaseModel):
     id: int
     email: str
@@ -492,8 +469,6 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> CurrentUser:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
 
-
-
 from fastapi import Depends, HTTPException
 # from news_backend.auth import get_current_user
 
@@ -510,8 +485,6 @@ def read_me(current: CurrentUser = Depends(get_current_user)):
         return {"id": row["id"], "email": row.get("email", ""), "name": row.get("name", ""), "role": row.get("role", "user")}
     # fallback to token payload if row not found
     return {"id": current.id, "email": current.email, "name": "", "role": current.role}
-
-
 
 @app.put("/users/me")
 def update_user(data: dict, current: CurrentUser = Depends(get_current_user)):
@@ -554,8 +527,6 @@ DEFAULT_PROFILE = {
     "website": "",                      # NEW
     "phone": "",                        # NEW
 }
-
-
 
 
 # GET /profile
@@ -618,12 +589,6 @@ def update_profile(data: ProfileUpdate, current: CurrentUser = Depends(get_curre
     return {"ok": True}
 
 
-
-
-
-
-# Aliases in main.py after defining /auth/* endpoints
-
 @app.post("/login")
 def login_alias(request: LoginRequest):
     return login(request)  # forwards to /auth/login
@@ -675,10 +640,10 @@ def get_news(query: str = "technology"):
             print("[get_news] geo_tag failed:", e)
             geo_tagged_articles.append(a)
 
-    # 2) Persist geo-tagged articles in Supabase
+    # 2) Persist geo-tagged articles in Supabase (upsert by url)
     save_news_to_supabase(geo_tagged_articles)
 
-    # 3) Topic modeling uses geo_tagged_articles (not original list)
+    # 3) Topic modeling on geo-tagged articles
     docs = [
         str(a.get("content") or a.get("description") or a.get("title", ""))
         for a in geo_tagged_articles
@@ -788,9 +753,6 @@ async def show_routes():
     for r in app.routes:
         print(" →", r.path)
     print("✅ Server Ready!\n")
-
-
-
 
 
 from typing import Optional
@@ -1076,3 +1038,14 @@ from news_backend.bookmark_routes import router as bookmarks_router
 app.include_router(bookmarks_router, prefix="/bookmarks")
 from news_backend.geo import router as geo
 app.include_router(geo, prefix="/geo")
+from .chatbot_routes import router as chatbot_router
+
+app.include_router(chatbot_router)
+
+
+
+@app.get("/news_compare")
+def get_news_compare(query: str = "technology"):
+    processed_query = preprocess_query(query)
+    articles = get_combined_news(processed_query)
+    return {"original_query": query, "processed_query": processed_query, "articles": articles}

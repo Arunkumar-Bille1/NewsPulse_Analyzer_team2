@@ -27,7 +27,7 @@ class UserOut(BaseModel):
 
     class Config:
         from_attributes = True
-    
+
 class PasswordResetRequest(BaseModel):
     email: EmailStr
 
@@ -55,7 +55,7 @@ class NewsBase(BaseModel):
     description: str | None = None
     image: str | None = None
     keywords: List[str] = []
-    
+
     class Config:
         from_attributes = True
 
@@ -83,7 +83,7 @@ class UserProfileResponse(UserProfileBase):
         from_attributes = True
 
 
-        
+
 class BookmarkCreate(BaseModel):
     user_id: str
     article_id: str

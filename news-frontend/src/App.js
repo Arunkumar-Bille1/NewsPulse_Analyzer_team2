@@ -1,8 +1,10 @@
 import React from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 
 import Navbar from "./components/Navbar";
 import Sidebar from "./components/Sidebar";
+import Chatbot from "./pages/Chatbot";
+import FloatingChatbot from "./components/FloatingChatbot";
 
 // Public pages
 import Login from "./pages/Login";
@@ -22,11 +24,10 @@ import TopicTrends from "./pages/TopicTrends";
 import Compare from "./pages/compare";
 import SavedNews from "./pages/SavedNews";
 import GeoDashboard from "./pages/GeoDashboard";
-import GeoFilter from "./components/GeoFilter";
 
 function App() {
   return (
-    <Router>
+    <>
       <Routes>
 
         {/* PUBLIC ROUTES */}
@@ -78,13 +79,7 @@ function App() {
           }
         />
 
-
-        {/* =======================
-            DASHBOARD ROUTES
-            (Sidebar + Navbar Layout)
-        ======================== */}
-
-        {/* HOME */}
+        {/* DASHBOARD ROUTES */}
         <Route
           path="/"
           element={
@@ -100,7 +95,6 @@ function App() {
           }
         />
 
-        {/* PROFILE */}
         <Route
           path="/profile"
           element={
@@ -116,7 +110,6 @@ function App() {
           }
         />
 
-        {/* ADMIN */}
         <Route
           path="/admin"
           element={
@@ -132,7 +125,6 @@ function App() {
           }
         />
 
-        {/* ARTICLE DETAILS */}
         <Route
           path="/article/:id"
           element={
@@ -148,7 +140,6 @@ function App() {
           }
         />
 
-        {/* RAW ANALYSIS */}
         <Route
           path="/analyze"
           element={
@@ -164,7 +155,6 @@ function App() {
           }
         />
 
-        {/* TRENDING */}
         <Route
           path="/trending"
           element={
@@ -180,7 +170,6 @@ function App() {
           }
         />
 
-        {/* COMPARE PAGE */}
         <Route
           path="/compare"
           element={
@@ -196,7 +185,6 @@ function App() {
           }
         />
 
-        {/* TOPIC TRENDS */}
         <Route
           path="/topic-trends"
           element={
@@ -212,7 +200,6 @@ function App() {
           }
         />
 
-        {/* ⭐ SAVED NEWS (BOOKMARKS) — FIX ADDED */}
         <Route
           path="/SavedNews"
           element={
@@ -227,21 +214,7 @@ function App() {
             </div>
           }
         />
-        <Route
-          path="/settings"
-          element={
-            <div className="flex">
-              <Sidebar />
-              <div className="flex-1 ml-64">
-                <Navbar />
-                <div className="p-6 bg-gray-50 min-h-screen mt-20">
-                  <Settings />
-                </div>
-              </div>
-            </div>
-          }
-        />
-        {/* ⭐ GEO DASHBOARD ROUTE */}
+
         <Route
           path="/GeoDashboard"
           element={
@@ -257,9 +230,28 @@ function App() {
           }
         />
 
+        <Route
+          path="/settings"
+          element={
+            <div className="flex">
+              <Sidebar />
+              <div className="flex-1 ml-64">
+                <Navbar />
+                <div className="p-6 bg-gray-50 min-h-screen mt-20">
+                  <Settings />
+                </div>
+              </div>
+            </div>
+          }
+        />
+
+        <Route path="/chatbot" element={<Chatbot />} />
 
       </Routes>
-    </Router>
+
+      {/* Floating chatbot icon */}
+      <FloatingChatbot />
+    </>
   );
 }
 

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import NewsCard from "../components/NewsCard";
+import { useNews } from "../context/NewsContext";
+
 
 // Voice Icon
 const VoiceIcon = ({ isListening }) => (
@@ -37,42 +39,63 @@ const SearchIcon = () => (
 );
 
 function Home() {
-  const [news, setNews] = useState([]);
-  const [query, setQuery] = useState("");
-  const [processedQuery, setProcessedQuery] = useState("");
-  const [loading, setLoading] = useState(false);
+  const {
+    news,
+    setNews,
+    query,
+    setQuery,
+    processedQuery,
+    setProcessedQuery,
+    loading,
+    setLoading,
+  } = useNews();                                  // ⟵ use context state
+
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef(null);
 
   const fetchNews = async (q = query) => {
-    if (!q.trim()) return;
+    const trimmed = q.trim();
+    if (!trimmed) return;
+
     setLoading(true);
     try {
-      const res = await axios.get(`http://127.0.0.1:8000/news?query=${encodeURIComponent(q)}`);
+      const res = await axios.get(
+        `http://127.0.0.1:8000/news?query=${encodeURIComponent(trimmed)}`
+      );
       setNews(res.data.articles || []);
       setProcessedQuery(res.data.processed_query || "");
     } catch (e) {
       console.error(e);
       setNews([]);
+      setProcessedQuery("");
     } finally {
       setLoading(false);
     }
   };
 
+  // Initial trending fetch ONLY if there is no data yet
   useEffect(() => {
+    if (news.length > 0) return;          // keep existing search / trending
+
     const load = async () => {
       setLoading(true);
       try {
-        const res = await axios.get(`http://127.0.0.1:8000/news?query=trending`);
+        const res = await axios.get(
+          "http://127.0.0.1:8000/news?query=trending"
+        );
         setNews(res.data.articles || []);
-      } catch {
+        setProcessedQuery("trending");
+      } catch (e) {
+        console.error(e);
         setNews([]);
+        setProcessedQuery("");
       } finally {
         setLoading(false);
       }
     };
+
     load();
-  }, []);
+  }, [news.length, setNews, setLoading, setProcessedQuery]);
 
   const startListening = () => {
     if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {

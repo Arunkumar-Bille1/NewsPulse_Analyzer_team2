@@ -1,6 +1,6 @@
 // src/pages/compare.js
 import React, { useState, useMemo, useRef } from "react";
-import { searchArticles } from "../api";
+import { searchArticlesCompare } from "../api";
 
 /* ===========================
    Simple Sentiment (rule-based)
@@ -134,23 +134,28 @@ export default function Compare() {
     "https://via.placeholder.com/800x450.png?text=No+Image+Available";
 
   /* ----- Search handler with loading UX ----- */
-  const handleSearch = async () => {
-    if (!searchText.trim()) return;
-    setButtonSearching(true); // button shows 'Searching...'
-    setLoading(true); // show full-screen loader & shimmer
-    try {
-      const res = await searchArticles(searchText);
-      // simulate slight delay for demo polish (remove if you want)
-      await new Promise((r) => setTimeout(r, 500));
-      setArticles(res.articles || []);
-    } catch (err) {
-      console.error("search error", err);
-      setPopup("Search failed. Try again.");
-    } finally {
-      setButtonSearching(false);
-      setLoading(false);
+const handleSearch = async () => {
+  if (!searchText.trim()) return;
+  setButtonSearching(true);
+  setLoading(true);
+  try {
+    const res = await searchArticlesCompare(searchText);
+    await new Promise((r) => setTimeout(r, 500));
+    const list = res.articles || [];
+    setArticles(list);
+    if (!list.length) {
+      setPopup("No articles found. Try a different keyword.");
     }
-  };
+  } catch (err) {
+    console.error("search error", err);
+    setArticles([]);            // ensure list is empty on real error
+    setPopup("Search failed. Try again.");
+  } finally {
+    setButtonSearching(false);
+    setLoading(false);
+  }
+};
+
 
   /* ----- popup helper ----- */
   const setPopup = (msg, ms = 1800) => {

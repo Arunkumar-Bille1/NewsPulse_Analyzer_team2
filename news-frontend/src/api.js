@@ -127,6 +127,10 @@ export const getCompareList = async (user_id) =>
 export const clearCompare = async (user_id) =>
   (await api.delete(`/compare/clear/${user_id}`)).data;
 
+
+export const searchArticlesCompare = async (query) =>
+  (await api.get("/news_compare", { params: { query } })).data;
+
 // ------------------------------------------------------
 // 🌍 GEO APIs
 // ------------------------------------------------------
